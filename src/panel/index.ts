@@ -10,7 +10,7 @@ let vueApp: App | null = null
 async function isWhitelisted(): Promise<boolean> {
   try {
     const result = await chrome.storage.local.get('whitelist')
-    const wl: string[] = result.whitelist ?? DEFAULT_WHITELIST
+    const wl: string[] = Array.isArray(result.whitelist) ? result.whitelist : DEFAULT_WHITELIST
     return wl.length === 0 || wl.some((d) => location.hostname.includes(d))
   } catch {
     return true
@@ -50,9 +50,17 @@ async function syncMount() {
   else if (!allowed && mounted) unmount()
 }
 
-// 监听 popup 发来的白名单变更通知，实时挂载/卸载面板
-chrome.runtime.onMessage.addListener((msg) => {
-  if (msg?.type === 'WHITELIST_UPDATED') syncMount()
+// storage 变更时实时同步挂载状态（覆盖所有 tab，无需 sendMessage）
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && 'whitelist' in changes) syncMount()
+})
+
+// 响应 popup 的存活探测
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg?.type === 'PING') {
+    sendResponse({ type: 'PONG' })
+    return true
+  }
 })
 
 if (document.readyState === 'loading') {

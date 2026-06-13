@@ -6,8 +6,8 @@ export interface LatLng {
 
 /**
  * 解析用户在 textarea 中输入的坐标字符串，支持两种格式：
- * - **格式一**：JSON 数组 `[[lat,lng],[lat,lng],...]`，以 `[[` 开头识别
- * - **格式二**：分号分隔的键值对 `lat,lng;lat,lng;...`
+ * - **格式一**：JSON 数组 `[[lng,lat],[lng,lat],...]`，以 `[[` 开头识别
+ * - **格式二**：分号分隔的键值对 `lng,lat;lng,lat;...`
  *
  * 要求至少 3 个点（构成最小多边形），任一格式解析失败或坐标包含 NaN 时返回 null。
  *
@@ -18,12 +18,12 @@ export function parseCoords(input: string): LatLng[] | null {
   const s = input.trim()
   if (!s) return null
 
-  // 格式一：[[lat,lng],[lat,lng],...]
+  // 格式一：[[lng,lat],[lng,lat],...]
   if (s.startsWith('[[')) {
     try {
       const arr = JSON.parse(s)
       if (!Array.isArray(arr) || arr.length < 3) return null
-      const result = arr.map(([lat, lng]: [number, number]) => ({ lat, lng }))
+      const result = arr.map(([lng, lat]: [number, number]) => ({ lat, lng }))
       if (result.some((p) => isNaN(p.lat) || isNaN(p.lng))) return null
       return result
     } catch {
@@ -31,7 +31,7 @@ export function parseCoords(input: string): LatLng[] | null {
     }
   }
 
-  // 格式二：lat,lng;lat,lng;...
+  // 格式二：lng,lat;lng,lat;...
   if (s.includes(';')) {
     const pairs = s
       .split(';')
@@ -40,7 +40,7 @@ export function parseCoords(input: string): LatLng[] | null {
     if (pairs.length < 3) return null
     const result = pairs.map((p) => {
       const parts = p.split(',').map(Number)
-      return { lat: parts[0], lng: parts[1] }
+      return { lat: parts[1], lng: parts[0] }
     })
     if (result.some((p) => isNaN(p.lat) || isNaN(p.lng))) return null
     return result
@@ -50,9 +50,9 @@ export function parseCoords(input: string): LatLng[] | null {
 }
 
 /**
- * 将坐标数组序列化为格式一的 JSON 字符串 `[[lat,lng],...]`，
+ * 将坐标数组序列化为格式一的 JSON 字符串 `[[lng,lat],...]`，
  * 用于在绘制点时实时更新 panel 的 textarea 显示内容。
  */
 export function coordsToText(points: LatLng[]): string {
-  return JSON.stringify(points.map((p) => [p.lat, p.lng]))
+  return JSON.stringify(points.map((p) => [p.lng, p.lat]))
 }

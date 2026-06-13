@@ -43,25 +43,38 @@ const newDomain = ref('')
 const saved = ref(false)
 const saveHint = ref('')
 
+// 探测当前 tab 内容脚本是否存活，若未注入则动态注入
+async function ensureContentScripts(): Promise<boolean> {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    if (!tab?.id) return false
+    let alive = false
+    try {
+      const resp = await chrome.tabs.sendMessage(tab.id, { type: 'PING' })
+      alive = resp?.type === 'PONG'
+    } catch { alive = false }
+    if (!alive) {
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['hook.iife.js'], world: 'MAIN' })
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['panel.iife.js'] })
+    }
+    return true
+  } catch {
+    // chrome:// 等特权页无法注入，静默失败
+    return false
+  }
+}
+
 onMounted(async () => {
   const result = await chrome.storage.local.get('whitelist')
-  whitelist.value = result.whitelist ?? DEFAULT_WHITELIST
+  whitelist.value = Array.isArray(result.whitelist) ? result.whitelist : DEFAULT_WHITELIST
+  ensureContentScripts()  // 后台静默注入，不阻塞 UI 渲染
 })
 
 async function save() {
   await chrome.storage.local.set({ whitelist: whitelist.value })
-  // 通知当前标签页内容脚本实时更新（挂载或卸载面板）
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-    if (tab?.id) {
-      await chrome.tabs.sendMessage(tab.id, { type: 'WHITELIST_UPDATED' }).catch(() => {})
-      saveHint.value = '已保存并立即生效'
-    } else {
-      saveHint.value = '已保存'
-    }
-  } catch {
-    saveHint.value = '已保存'
-  }
+  // storage.onChanged 通知所有存活 tab；ensureContentScripts 处理当前未注入的 tab
+  const ok = await ensureContentScripts()
+  saveHint.value = ok ? '已保存并立即生效' : '已保存'
   saved.value = true
   setTimeout(() => { saved.value = false }, 2500)
 }

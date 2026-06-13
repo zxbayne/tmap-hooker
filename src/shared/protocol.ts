@@ -150,6 +150,12 @@ export interface TogglePolygonVisiblePayload {
 
 // ── 消息联合类型（用于 TypeScript 类型收窄） ────────────────────────────────
 
+/**
+ * 分配式 Omit：在联合类型的每个成员上分别执行 Omit，而非把整个联合当成一个类型。
+ * 普通 `Omit<Union, K>` 会先求联合的公共键，导致各成员独有的 payload 字段被丢弃。
+ */
+type DistributiveOmit<T, K extends keyof any> = T extends any ? Omit<T, K> : never
+
 export type HookMessage =
   | { source: typeof HOOK_SOURCE; type: HookEvent.MAP_READY }
   | { source: typeof HOOK_SOURCE; type: HookEvent.POINT_ADDED; payload: PointAddedPayload }
@@ -180,11 +186,11 @@ export type PanelMessage =
   | { source: typeof PANEL_SOURCE; type: PanelCmd.TOGGLE_POLYGON_VISIBLE; payload: TogglePolygonVisiblePayload }
 
 /** 从 hook 层向 panel 层发送事件消息（自动附加 source 字段）。 */
-export function sendToPanel(msg: Omit<HookMessage, 'source'>): void {
+export function sendToPanel(msg: DistributiveOmit<HookMessage, 'source'>): void {
   window.postMessage({ ...msg, source: HOOK_SOURCE }, '*')
 }
 
 /** 从 panel 层向 hook 层发送命令消息（自动附加 source 字段）。 */
-export function sendToHook(msg: Omit<PanelMessage, 'source'>): void {
+export function sendToHook(msg: DistributiveOmit<PanelMessage, 'source'>): void {
   window.postMessage({ ...msg, source: PANEL_SOURCE }, '*')
 }

@@ -137,8 +137,8 @@
         <textarea
           class="coords-input"
           v-model="localCoords"
-          placeholder="[[lat,lng],[lat,lng],...]
-或 lat,lng;lat,lng;..."
+          placeholder="[[lng,lat],[lng,lat],...]
+或 lng,lat;lng,lat;..."
           rows="3"
           spellcheck="false"
         />
@@ -201,9 +201,9 @@ const formattedCoords = computed(() => {
   const coords = selectedLayer.value?.coords ?? []
   if (coords.length === 0) return ''
   if (coordsFmt.value === 'array') {
-    return JSON.stringify(coords.map((c) => [c.lat, c.lng]))
+    return JSON.stringify(coords.map((c) => [c.lng, c.lat]))
   }
-  return coords.map((c) => `${c.lat},${c.lng}`).join(';')
+  return coords.map((c) => `${c.lng},${c.lat}`).join(';')
 })
 
 async function copyCoords() {

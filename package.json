@@ -12,6 +12,7 @@
   },
   "devDependencies": {
     "@types/chrome": "^0.1.43",
+    "@types/node": "^20.19.43",
     "@vitejs/plugin-vue": "^5.0.0",
     "concurrently": "^8.0.0",
     "typescript": "^5.4.0",
