@@ -69,7 +69,7 @@
           <!-- 名称（双击进入编辑） -->
           <input
             v-if="editingId === layer.id"
-            ref="nameInputRef"
+            :ref="(el) => { nameInputRef.value = el as HTMLInputElement | null }"
             class="poly-name-input"
             :value="layer.name"
             @blur="onNameBlur(layer.id, $event)"
