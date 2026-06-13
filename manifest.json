@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "TMap Hooker",
+  "version": "1.0.0",
+  "description": "腾讯地图测距辅助工具",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["hook.iife.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["panel.iife.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

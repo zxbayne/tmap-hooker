@@ -1,0 +1,19 @@
+{
+  "name": "tmap-hooker",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build:hook": "vite build --config vite.config.hook.ts",
+    "build:panel": "vite build --config vite.config.panel.ts",
+    "build": "npm run copy-assets && npm run build:hook && npm run build:panel",
+    "copy-assets": "mkdir -p dist/icons && cp manifest.json dist/manifest.json && cp public/icons/*.png dist/icons/ 2>/dev/null || true",
+    "dev": "concurrently \"npm run build:hook -- --watch\" \"npm run build:panel -- --watch\""
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.0",
+    "concurrently": "^8.0.0",
+    "typescript": "^5.4.0",
+    "vite": "^5.0.0",
+    "vue": "^3.4.0"
+  }
+}
