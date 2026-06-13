@@ -136,7 +136,6 @@ export class OverlayManager {
           background: true,
           backgroundColor: 'rgba(20, 20, 40, 0.85)',
           borderRadius: 4,
-          padding: '2 6',
         }),
       },
       geometries: [],
