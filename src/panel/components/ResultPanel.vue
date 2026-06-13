@@ -13,11 +13,19 @@
     />
     <PolygonPanel
       v-else-if="activeTool === TOOL_IDS.POLYGON"
-      :coords-text="polygonCoords"
-      :selected-polygon-id="selectedPolygonId"
-      :polygon-count="polygonCount"
-      @draw="emit('drawPolygon', $event)"
-      @delete="emit('deletePolygon')"
+      :polygon-mode="polygonMode"
+      :drawing-point-count="drawingPointCount"
+      :drawing-coords-text="drawingCoordsText"
+      :polygon-layers="polygonLayers"
+      @start-drawing="emit('startDrawing')"
+      @finish-drawing="emit('finishDrawing')"
+      @cancel-drawing="emit('cancelDrawing')"
+      @undo-point="emit('undoPoint')"
+      @delete-layer="(id) => emit('deleteLayer', id)"
+      @rename-layer="(id, name) => emit('renameLayer', id, name)"
+      @toggle-visible="(id) => emit('toggleVisible', id)"
+      @select-layer="(id) => emit('selectLayer', id)"
+      @draw-from-text="(input) => emit('drawFromText', input)"
     />
   </div>
 </template>
@@ -26,7 +34,7 @@
 import { computed } from 'vue'
 import { TOOL_IDS } from '@shared/tool-config'
 import type { MeasurementResultPayload } from '@shared/protocol'
-import type { SegmentInfo } from '../composables/useTool'
+import type { SegmentInfo, PolygonLayer } from '../composables/useTool'
 import TwoPointResult from './tools/TwoPointResult.vue'
 import MultiPointResult from './tools/MultiPointResult.vue'
 import PolygonPanel from './tools/PolygonPanel.vue'
@@ -37,17 +45,25 @@ const props = defineProps<{
   segments: SegmentInfo[]
   totalLabel: string
   pointCount: number
-  polygonCoords: string
-  selectedPolygonId: string | null
-  polygonCount: number
+  // polygon
+  polygonMode: 'idle' | 'drawing'
+  drawingPointCount: number
+  drawingCoordsText: string
+  polygonLayers: PolygonLayer[]
 }>()
 
 const emit = defineEmits<{
-  drawPolygon: [input: string]
-  deletePolygon: []
+  startDrawing: []
+  finishDrawing: []
+  cancelDrawing: []
+  undoPoint: []
+  deleteLayer: [id: string]
+  renameLayer: [id: string, name: string]
+  toggleVisible: [id: string]
+  selectLayer: [id: string]
+  drawFromText: [input: string]
 }>()
 
-/** 有激活工具或有历史数据时显示结果区域。 */
 const showResult = computed(
   () =>
     props.activeTool !== '' ||

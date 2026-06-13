@@ -18,9 +18,11 @@ export const enum HookEvent {
   POINT_REMOVED = 'POINT_REMOVED',
   // 多边形工具事件
   POLYGON_POINT_ADDED = 'POLYGON_POINT_ADDED',
+  POLYGON_POINT_REMOVED = 'POLYGON_POINT_REMOVED',
   POLYGON_DRAWN = 'POLYGON_DRAWN',
   POLYGON_SELECTED = 'POLYGON_SELECTED',
   POLYGON_DELETED = 'POLYGON_DELETED',
+  POLYGON_MODE_CHANGED = 'POLYGON_MODE_CHANGED',
 }
 
 // Panel → Hook 命令：panel 层用户操作时发送给 hook
@@ -34,6 +36,12 @@ export const enum PanelCmd {
   // 多边形工具命令
   DRAW_POLYGON = 'DRAW_POLYGON',
   DELETE_POLYGON = 'DELETE_POLYGON',
+  START_DRAWING_POLYGON = 'START_DRAWING_POLYGON',
+  FINISH_DRAWING_POLYGON = 'FINISH_DRAWING_POLYGON',
+  CANCEL_DRAWING_POLYGON = 'CANCEL_DRAWING_POLYGON',
+  UNDO_POLYGON_POINT = 'UNDO_POLYGON_POINT',
+  SELECT_POLYGON = 'SELECT_POLYGON',
+  TOGGLE_POLYGON_VISIBLE = 'TOGGLE_POLYGON_VISIBLE',
 }
 
 export interface LatLngData {
@@ -70,7 +78,7 @@ export interface PointRemovedPayload {
   newCount: number
 }
 
-/** 多边形工具绘制模式下每次点击地图时发送，coordsText 包含当前所有点的坐标（供 textarea 更新）。 */
+/** 多边形绘制模式下新增顶点时发送。 */
 export interface PolygonPointAddedPayload {
   lat: number
   lng: number
@@ -78,13 +86,19 @@ export interface PolygonPointAddedPayload {
   coordsText: string
 }
 
-/** 多边形绘制完成后发送，id 为新多边形的唯一标识，count 为点数。 */
+/** 多边形绘制模式下撤销最后一个顶点时发送。 */
+export interface PolygonPointRemovedPayload {
+  newCount: number
+  coordsText: string
+}
+
+/** 多边形绘制完成后发送，id 为新多边形的唯一标识，count 为顶点数。 */
 export interface PolygonDrawnPayload {
   id: string
   count: number
 }
 
-/** 用户点击地图上某个多边形时发送，id 为被选中的多边形（null 表示取消选中）。 */
+/** 用户点击地图上某个多边形时发送。 */
 export interface PolygonSelectedPayload {
   id: string | null
 }
@@ -92,6 +106,12 @@ export interface PolygonSelectedPayload {
 /** 多边形被删除后发送。 */
 export interface PolygonDeletedPayload {
   id: string
+}
+
+/** 多边形工具绘制模式变更时发送（idle = 选择模式，drawing = 绘制模式）。 */
+export interface PolygonModeChangedPayload {
+  mode: 'idle' | 'drawing'
+  drawingPointCount: number
 }
 
 // ── Panel → Hook payload 类型 ────────────────────────────────────────────────
@@ -106,9 +126,25 @@ export interface SetDebugPayload {
   enabled: boolean
 }
 
-/** 从 textarea 提交坐标并绘制多边形的命令。 */
+/** 从坐标文本绘制多边形的命令。 */
 export interface DrawPolygonPayload {
   input: string
+}
+
+/** 删除指定 id 的多边形。 */
+export interface DeletePolygonPayload {
+  id: string
+}
+
+/** Panel 主动选中指定多边形（触发 hook 层高亮）。 */
+export interface SelectPolygonPayload {
+  id: string
+}
+
+/** 切换指定多边形的可见性。 */
+export interface TogglePolygonVisiblePayload {
+  id: string
+  visible: boolean
 }
 
 // ── 消息联合类型（用于 TypeScript 类型收窄） ────────────────────────────────
@@ -120,9 +156,11 @@ export type HookMessage =
   | { source: typeof HOOK_SOURCE; type: HookEvent.MEASUREMENT_RESULT; payload: MeasurementResultPayload }
   | { source: typeof HOOK_SOURCE; type: HookEvent.POINT_REMOVED; payload: PointRemovedPayload }
   | { source: typeof HOOK_SOURCE; type: HookEvent.POLYGON_POINT_ADDED; payload: PolygonPointAddedPayload }
+  | { source: typeof HOOK_SOURCE; type: HookEvent.POLYGON_POINT_REMOVED; payload: PolygonPointRemovedPayload }
   | { source: typeof HOOK_SOURCE; type: HookEvent.POLYGON_DRAWN; payload: PolygonDrawnPayload }
   | { source: typeof HOOK_SOURCE; type: HookEvent.POLYGON_SELECTED; payload: PolygonSelectedPayload }
   | { source: typeof HOOK_SOURCE; type: HookEvent.POLYGON_DELETED; payload: PolygonDeletedPayload }
+  | { source: typeof HOOK_SOURCE; type: HookEvent.POLYGON_MODE_CHANGED; payload: PolygonModeChangedPayload }
 
 export type PanelMessage =
   | { source: typeof PANEL_SOURCE; type: PanelCmd.PANEL_READY }
@@ -132,7 +170,13 @@ export type PanelMessage =
   | { source: typeof PANEL_SOURCE; type: PanelCmd.CLEAR }
   | { source: typeof PANEL_SOURCE; type: PanelCmd.SET_DEBUG; payload: SetDebugPayload }
   | { source: typeof PANEL_SOURCE; type: PanelCmd.DRAW_POLYGON; payload: DrawPolygonPayload }
-  | { source: typeof PANEL_SOURCE; type: PanelCmd.DELETE_POLYGON }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.DELETE_POLYGON; payload: DeletePolygonPayload }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.START_DRAWING_POLYGON }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.FINISH_DRAWING_POLYGON }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.CANCEL_DRAWING_POLYGON }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.UNDO_POLYGON_POINT }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.SELECT_POLYGON; payload: SelectPolygonPayload }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.TOGGLE_POLYGON_VISIBLE; payload: TogglePolygonVisiblePayload }
 
 /** 从 hook 层向 panel 层发送事件消息（自动附加 source 字段）。 */
 export function sendToPanel(msg: Omit<HookMessage, 'source'>): void {

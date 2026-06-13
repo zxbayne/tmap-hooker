@@ -19,16 +19,10 @@ export class ToolManager {
     this.register(new PolygonTool())
   }
 
-  /** 将工具注册到工具表，key 为 tool.id。 */
   register(tool: ITool): void {
     this.tools.set(tool.id, tool)
   }
 
-  /**
-   * 捕获到 TMap map 实例时调用，初始化 OverlayManager 并通知 panel。
-   * 幂等性守卫：`this.map === map` 时直接返回，因为 prototype 上的多个被 hook 方法
-   * 都会触发此回调，对同一实例只应初始化一次。
-   */
   onMapReady(map: any, TMap: any): void {
     if (this.map === map) return
     log('ToolManager.onMapReady — new map instance captured', map)
@@ -39,28 +33,16 @@ export class ToolManager {
     log('MAP_READY sent to panel')
   }
 
-  /**
-   * 若 map 已就绪则重新发送 MAP_READY 事件。
-   * 用于 panel 脚本（content script）比 hook 脚本晚加载时补发事件。
-   */
   replayMapReady(): void {
     log('replayMapReady — map exists?', !!this.map)
     if (this.map) sendToPanel({ type: HookEvent.MAP_READY })
   }
 
-  /**
-   * 切换当前激活工具。
-   * - 先 deactivate 当前工具
-   * - 若当前工具不是 polygon，调用 clearMeasurement（测量覆盖物是临时的）；
-   *   若是 polygon 则不清除（polygon 覆盖物是持久的，切换工具时应保留）
-   * - 再 activate 新工具
-   */
   setTool(toolId: string): void {
     if (!this.map || !this.overlays) return
 
     if (this.activeTool) {
       this.activeTool.deactivate()
-      // 多边形工具的覆盖物是持久的，切换时不清除；其他测量工具的覆盖物是临时的
       if (this.activeTool.id !== 'polygon') {
         this.overlays.clearMeasurement()
       }
@@ -85,29 +67,46 @@ export class ToolManager {
     log('setTool:', toolId)
   }
 
-  /**
-   * 向当前激活的 PolygonTool 发起绘制命令。
-   * 仅当 activeTool 是 PolygonTool 时才生效，避免类型转换错误。
-   */
+  // ── Polygon-specific commands ─────────────────────────────────────────────
+
+  private _polygon(): PolygonTool | null {
+    return this.activeTool instanceof PolygonTool ? this.activeTool : null
+  }
+
+  startDrawingPolygon(): void {
+    this._polygon()?.enterDrawingMode()
+  }
+
+  finishDrawingPolygon(): void {
+    this._polygon()?.finishDrawing()
+  }
+
+  cancelDrawingPolygon(): void {
+    this._polygon()?.cancelDrawing()
+  }
+
+  undoPolygonPoint(): void {
+    this._polygon()?.undoDrawingPoint()
+  }
+
   drawPolygon(input: string): void {
-    const tool = this.activeTool
-    if (tool instanceof PolygonTool) {
-      tool.drawFromInput(input)
-    }
+    this._polygon()?.drawFromInput(input)
   }
 
-  /**
-   * 向当前激活的 PolygonTool 发起删除选中多边形的命令。
-   * 仅当 activeTool 是 PolygonTool 时才生效。
-   */
-  deletePolygon(): void {
-    const tool = this.activeTool
-    if (tool instanceof PolygonTool) {
-      tool.deleteSelected()
-    }
+  deletePolygonById(id: string): void {
+    this._polygon()?.deleteById(id)
   }
 
-  /** 完成当前工具的操作（如多点测距停止接受新点击）。工具须实现可选的 finish() 方法。 */
+  selectPolygonById(id: string): void {
+    this._polygon()?.selectById(id)
+  }
+
+  togglePolygonVisible(id: string, visible: boolean): void {
+    this._polygon()?.setVisible(id, visible)
+  }
+
+  // ── General tool commands ─────────────────────────────────────────────────
+
   finish(): void {
     const tool = this.activeTool
     if (tool && 'finish' in tool && typeof (tool as any).finish === 'function') {
@@ -115,7 +114,6 @@ export class ToolManager {
     }
   }
 
-  /** 撤销当前工具的最后一步操作。工具须实现可选的 undo() 方法。 */
   undo(): void {
     const tool = this.activeTool
     if (tool && 'undo' in tool && typeof (tool as any).undo === 'function') {
@@ -123,10 +121,6 @@ export class ToolManager {
     }
   }
 
-  /**
-   * 清除所有覆盖物并重置工具状态。
-   * 若有激活工具则调用其 reset()，否则直接 clearAll()（清除所有图层，包括多边形）。
-   */
   clear(): void {
     if (this.activeTool) {
       this.activeTool.reset()

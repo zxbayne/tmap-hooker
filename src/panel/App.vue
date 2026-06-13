@@ -43,14 +43,22 @@
       :segments="segments"
       :total-label="totalLabel"
       :point-count="pointCount"
-      :polygon-coords="polygonCoords"
-      :selected-polygon-id="selectedPolygonId"
-      :polygon-count="polygonCount"
-      @draw-polygon="drawPolygon"
-      @delete-polygon="deletePolygon"
+      :polygon-mode="polygonMode"
+      :drawing-point-count="drawingPointCount"
+      :drawing-coords-text="drawingCoordsText"
+      :polygon-layers="polygonLayers"
+      @start-drawing="startDrawingPolygon"
+      @finish-drawing="finishDrawingPolygon"
+      @cancel-drawing="cancelDrawingPolygon"
+      @undo-point="undoPolygonPoint"
+      @delete-layer="(id) => deletePolygon(id)"
+      @rename-layer="(id, name) => renamePolygon(id, name)"
+      @toggle-visible="(id) => togglePolygonVisible(id)"
+      @select-layer="(id) => selectPolygonFromPanel(id)"
+      @draw-from-text="(input) => drawPolygon(input)"
     />
 
-    <!-- 操作按钮栏（多边形工具激活时隐藏，由 PolygonPanel 提供自己的按钮） -->
+    <!-- 操作按钮栏（多边形工具激活时隐藏） -->
     <ActionBar
       :active-tool="activeTool"
       :point-count="pointCount"
@@ -78,15 +86,23 @@ const {
   totalLabel,
   pointCount,
   twoPointResult,
-  polygonCoords,
-  selectedPolygonId,
-  polygonCount,
+  polygonMode,
+  drawingPointCount,
+  drawingCoordsText,
+  polygonLayers,
   setTool,
   finish,
   undo,
   clear,
+  startDrawingPolygon,
+  finishDrawingPolygon,
+  cancelDrawingPolygon,
+  undoPolygonPoint,
   drawPolygon,
   deletePolygon,
+  selectPolygonFromPanel,
+  togglePolygonVisible,
+  renamePolygon,
   setDebug,
 } = useTool()
 
@@ -94,13 +110,11 @@ const {
 const COLLAPSE_KEY = '__tmh_collapsed__'
 const isCollapsed = ref(localStorage.getItem(COLLAPSE_KEY) === 'true')
 
-/** 收起面板为小球，状态持久化到 localStorage。 */
 function collapse() {
   isCollapsed.value = true
   localStorage.setItem(COLLAPSE_KEY, 'true')
 }
 
-/** 从小球展开为完整面板，状态持久化到 localStorage。 */
 function expand() {
   isCollapsed.value = false
   localStorage.setItem(COLLAPSE_KEY, 'false')
@@ -109,7 +123,6 @@ function expand() {
 // ── 设置面板可见性 ─────────────────────────────────────────────────────────────
 const showSettings = ref(false)
 
-/** 切换设置下拉面板的显示/隐藏。 */
 function toggleSettings() {
   showSettings.value = !showSettings.value
 }
@@ -119,21 +132,18 @@ const pos = reactive({ x: window.innerWidth - 260, y: 20 })
 let dragging = false
 let dragOffset = { x: 0, y: 0 }
 
-/** 记录拖拽起始点，供 onMouseMove 计算偏移量。 */
 function startDrag(e: MouseEvent) {
   dragging = true
   dragOffset.x = e.clientX - pos.x
   dragOffset.y = e.clientY - pos.y
 }
 
-/** 跟踪鼠标移动更新面板位置，限制在视口范围内。 */
 function onMouseMove(e: MouseEvent) {
   if (!dragging) return
   pos.x = Math.max(0, Math.min(window.innerWidth - 240, e.clientX - dragOffset.x))
   pos.y = Math.max(0, Math.min(window.innerHeight - 100, e.clientY - dragOffset.y))
 }
 
-/** 结束拖拽。 */
 function onMouseUp() {
   dragging = false
 }

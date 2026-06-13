@@ -15,7 +15,6 @@ log('hook.iife.js loaded, document.readyState =', document.readyState)
 const toolManager = new ToolManager()
 installMapBridge(toolManager)
 
-/** 监听来自 panel 层的命令消息，通过 source 字段过滤非扩展消息。 */
 window.addEventListener('message', (event: MessageEvent) => {
   const msg = event.data as PanelMessage
   if (!msg || msg.source !== PANEL_SOURCE) return
@@ -24,7 +23,6 @@ window.addEventListener('message', (event: MessageEvent) => {
 
   switch (msg.type) {
     case PanelCmd.PANEL_READY:
-      // panel 加载完成后补发 MAP_READY，处理 panel 晚于 hook 初始化的情况
       toolManager.replayMapReady()
       break
     case PanelCmd.SET_TOOL:
@@ -47,7 +45,25 @@ window.addEventListener('message', (event: MessageEvent) => {
       toolManager.drawPolygon(msg.payload.input)
       break
     case PanelCmd.DELETE_POLYGON:
-      toolManager.deletePolygon()
+      toolManager.deletePolygonById(msg.payload.id)
+      break
+    case PanelCmd.START_DRAWING_POLYGON:
+      toolManager.startDrawingPolygon()
+      break
+    case PanelCmd.FINISH_DRAWING_POLYGON:
+      toolManager.finishDrawingPolygon()
+      break
+    case PanelCmd.CANCEL_DRAWING_POLYGON:
+      toolManager.cancelDrawingPolygon()
+      break
+    case PanelCmd.UNDO_POLYGON_POINT:
+      toolManager.undoPolygonPoint()
+      break
+    case PanelCmd.SELECT_POLYGON:
+      toolManager.selectPolygonById(msg.payload.id)
+      break
+    case PanelCmd.TOGGLE_POLYGON_VISIBLE:
+      toolManager.togglePolygonVisible(msg.payload.id, msg.payload.visible)
       break
   }
 })

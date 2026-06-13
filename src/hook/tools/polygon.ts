@@ -8,114 +8,265 @@ export class PolygonTool implements ITool {
   readonly id = TOOL_IDS.POLYGON
 
   private ctx: ToolContext | null = null
-  /** 当前正在绘制（尚未提交）的点列表，提交后清空。 */
+  private mode: 'idle' | 'drawing' = 'idle'
   private drawingPoints: LatLng[] = []
-  /** 当前高亮选中的多边形 id，null 表示没有选中。 */
   private selectedId: string | null = null
-  /** 已完成绘制的多边形 id 集合，用于管理生命周期。 */
   private polygonIds: Set<string> = new Set()
   private idCounter = 0
-  private clickHandler: ((evt: any) => void) | null = null
 
-  /** 注册地图点击监听器，清空上一次的绘制点，进入绘制模式。 */
+  private drawClickHandler: ((evt: any) => void) | null = null
+  private mousemoveHandler: ((evt: any) => void) | null = null
+  private dblClickHandler: ((evt: any) => void) | null = null
+  private keydownHandler: ((evt: KeyboardEvent) => void) | null = null
+
+  private readonly RUBBER_BAND_ID = 'poly-rubber-band'
+  private readonly PREVIEW_POLY_ID = 'poly-preview'
+
+  // ── ITool interface ───────────────────────────────────────────────────────
+
   activate(ctx: ToolContext): void {
     this.ctx = ctx
-    this.drawingPoints = []
-    this.clickHandler = (evt: any) => this.onMapClick(evt)
-    ctx.map.on('click', this.clickHandler)
-    log('PolygonTool activated')
+    this.mode = 'idle'
+    log('PolygonTool activated (idle mode)')
   }
 
-  /** 注销地图点击监听器，清除临时绘制标记，但保留已完成的多边形。 */
   deactivate(): void {
-    if (this.ctx && this.clickHandler) {
-      this.ctx.map.off('click', this.clickHandler)
+    if (this.mode === 'drawing') {
+      this._cleanupDrawingState()
     }
-    this.clickHandler = null
     this.ctx = null
-    this._clearDrawingMarkers()
-    this.drawingPoints = []
     log('PolygonTool deactivated')
   }
 
   /**
-   * 清除当前正在绘制的临时标记和点，重新开始绘制流程。
-   * 注意：已完成的多边形不会被清除，只有 CLEAR 命令才会清除所有覆盖物。
+   * 清除所有已绘制多边形及绘制状态，响应 CLEAR 命令。
+   * Panel 层的 clear() 已重置 polygonLayers，此处只负责清理地图覆盖物。
    */
   reset(): void {
-    this._clearDrawingMarkers()
-    this.drawingPoints = []
-    // 如果工具仍处于激活状态，重新挂载点击监听器
+    if (this.mode === 'drawing') {
+      this._cleanupDrawingState()
+    }
     if (this.ctx) {
-      if (!this.clickHandler) {
-        this.clickHandler = (evt: any) => this.onMapClick(evt)
-        this.ctx.map.on('click', this.clickHandler)
+      for (const id of this.polygonIds) {
+        this.ctx.overlays.removePolygon(id)
       }
     }
-    log('PolygonTool reset (drawing cleared, polygons preserved)')
+    this.polygonIds.clear()
+    this.selectedId = null
+    this.idCounter = 0
+    log('PolygonTool reset — all polygons cleared')
+  }
+
+  // ── Mode transitions ──────────────────────────────────────────────────────
+
+  /** 进入绘制模式：注册所有绘制相关事件监听器，取消当前选中。 */
+  enterDrawingMode(): void {
+    if (!this.ctx) return
+    this._cleanupDrawingState()
+    this.mode = 'drawing'
+    this.drawingPoints = []
+    this.selectedId = null
+    this.ctx.overlays.setPolygonHighlight(null)
+
+    this.drawClickHandler = (evt: any) => this.onMapClick(evt)
+    this.ctx.map.on('click', this.drawClickHandler)
+
+    this.mousemoveHandler = (evt: any) => this.onMouseMove(evt)
+    this.ctx.map.on('mousemove', this.mousemoveHandler)
+
+    this.dblClickHandler = (evt: any) => this.onDblClick(evt)
+    this.ctx.map.on('dblclick', this.dblClickHandler)
+
+    this.keydownHandler = (evt: KeyboardEvent) => this.onKeydown(evt)
+    document.addEventListener('keydown', this.keydownHandler)
+
+    sendToPanel({ type: HookEvent.POLYGON_MODE_CHANGED, payload: { mode: 'drawing', drawingPointCount: 0 } })
+    log('PolygonTool enterDrawingMode')
+  }
+
+  /** 完成当前绘制：至少需要 3 个顶点，生成多边形后进入 idle 模式。 */
+  finishDrawing(): void {
+    if (this.drawingPoints.length < 3 || !this.ctx) return
+    const id = `poly-${++this.idCounter}`
+    const count = this.drawingPoints.length
+    this.ctx.overlays.addPolygon(id, [...this.drawingPoints], (clickedId) => this._onPolygonClick(clickedId))
+    this.polygonIds.add(id)
+    sendToPanel({ type: HookEvent.POLYGON_DRAWN, payload: { id, count } })
+    log('polygon finished, id =', id, 'points =', count)
+    this.enterIdleMode()
+  }
+
+  /** 取消当前绘制：丢弃所有打点，进入 idle 模式。 */
+  cancelDrawing(): void {
+    log('PolygonTool cancelDrawing')
+    this.enterIdleMode()
+  }
+
+  /** 进入 idle（选择）模式：注销绘制事件，清理临时覆盖物。 */
+  private enterIdleMode(): void {
+    this._cleanupDrawingState()
+    sendToPanel({ type: HookEvent.POLYGON_MODE_CHANGED, payload: { mode: 'idle', drawingPointCount: 0 } })
+    log('PolygonTool enterIdleMode')
   }
 
   /**
-   * 解析坐标输入并在地图上绘制多边形。
-   * 支持两种格式：`[[lat,lng],...]` 或 `lat,lng;lat,lng;...`。
-   * 绘制成功后清除临时标记，并向 panel 发送 POLYGON_DRAWN 事件。
+   * 清理绘制状态（注销事件监听、移除临时覆盖物）而不发送 mode 事件。
+   * 供 enterIdleMode、deactivate、reset 内部调用，避免代码重复。
+   */
+  private _cleanupDrawingState(): void {
+    this.mode = 'idle'
+    if (this.ctx) {
+      if (this.drawClickHandler) {
+        this.ctx.map.off('click', this.drawClickHandler)
+        this.drawClickHandler = null
+      }
+      if (this.mousemoveHandler) {
+        this.ctx.map.off('mousemove', this.mousemoveHandler)
+        this.mousemoveHandler = null
+      }
+      if (this.dblClickHandler) {
+        this.ctx.map.off('dblclick', this.dblClickHandler)
+        this.dblClickHandler = null
+      }
+      this._clearDrawingMarkers()
+      this.ctx.overlays.removeRubberBand(this.RUBBER_BAND_ID)
+      this.ctx.overlays.removePreviewPolygon(this.PREVIEW_POLY_ID)
+    }
+    if (this.keydownHandler) {
+      document.removeEventListener('keydown', this.keydownHandler)
+      this.keydownHandler = null
+    }
+    this.drawingPoints = []
+  }
+
+  // ── Public commands ───────────────────────────────────────────────────────
+
+  /**
+   * 从坐标文本直接绘制多边形（坐标导入入口）。
+   * 若当前在绘制模式则先取消，解析成功后立即进入 idle 模式。
    */
   drawFromInput(input: string): void {
     if (!this.ctx) return
+    if (this.mode === 'drawing') {
+      this.enterIdleMode()
+    }
     const points = parseCoords(input)
-    if (!points) {
-      log('drawFromInput: failed to parse input:', input)
+    if (!points || points.length < 3) {
+      log('drawFromInput: failed to parse or too few points:', input)
       return
     }
-
-    this._clearDrawingMarkers()
-    this.drawingPoints = []
-
     const id = `poly-${++this.idCounter}`
     this.ctx.overlays.addPolygon(id, points, (clickedId) => this._onPolygonClick(clickedId))
     this.polygonIds.add(id)
-
     sendToPanel({ type: HookEvent.POLYGON_DRAWN, payload: { id, count: points.length } })
     log('polygon drawn from input, id =', id, 'points =', points.length)
   }
 
-  /** 删除当前选中的多边形，并向 panel 发送 POLYGON_DELETED 事件。 */
-  deleteSelected(): void {
-    if (!this.ctx || !this.selectedId) return
-    const id = this.selectedId
-    this.ctx.overlays.removePolygon(id)
-    this.polygonIds.delete(id)
-    this.selectedId = null
-    sendToPanel({ type: HookEvent.POLYGON_DELETED, payload: { id } })
-    log('polygon deleted:', id)
+  /** 撤销绘制中的最后一个顶点。 */
+  undoDrawingPoint(): void {
+    if (this.mode !== 'drawing' || this.drawingPoints.length === 0) return
+    this._popLastDrawingPoint()
+    if (this.drawingPoints.length === 0) {
+      this.ctx?.overlays.removeRubberBand(this.RUBBER_BAND_ID)
+    }
+    if (this.drawingPoints.length >= 3) {
+      this.ctx?.overlays.setPreviewPolygon(
+        this.PREVIEW_POLY_ID,
+        this.drawingPoints,
+        (id) => this._onPolygonClick(id),
+      )
+    } else {
+      this.ctx?.overlays.removePreviewPolygon(this.PREVIEW_POLY_ID)
+    }
+    const coordsText = coordsToText(this.drawingPoints)
+    sendToPanel({
+      type: HookEvent.POLYGON_POINT_REMOVED,
+      payload: { newCount: this.drawingPoints.length, coordsText },
+    })
+    log('polygon point undone, remaining:', this.drawingPoints.length)
   }
 
-  /**
-   * 处理地图点击事件：追加点到绘制缓冲区，放置编号临时标记，
-   * 并向 panel 发送 POLYGON_POINT_ADDED（含当前所有点的坐标文本，供 textarea 实时更新）。
-   */
-  private onMapClick(evt: any): void {
+  /** 按 id 删除指定多边形（Panel 图层列表删除按钮触发）。 */
+  deleteById(id: string): void {
     if (!this.ctx) return
+    this.ctx.overlays.removePolygon(id)
+    this.polygonIds.delete(id)
+    if (this.selectedId === id) {
+      this.selectedId = null
+    }
+    sendToPanel({ type: HookEvent.POLYGON_DELETED, payload: { id } })
+    log('polygon deleted by id:', id)
+  }
+
+  /** 切换指定多边形的地图可见性。 */
+  setVisible(id: string, visible: boolean): void {
+    this.ctx?.overlays.setPolygonVisible(id, visible)
+  }
+
+  /** Panel 图层列表选中某行时主动触发高亮（非地图点击路径）。 */
+  selectById(id: string): void {
+    if (this.mode === 'drawing') return
+    if (this.selectedId === id) return
+    this.selectedId = id
+    this.ctx?.overlays.setPolygonHighlight(id)
+    sendToPanel({ type: HookEvent.POLYGON_SELECTED, payload: { id } })
+    log('polygon selected by panel:', id)
+  }
+
+  // ── Map event handlers ────────────────────────────────────────────────────
+
+  private onMapClick(evt: any): void {
+    if (!this.ctx || this.mode !== 'drawing') return
     const latlng: LatLng = { lat: evt.latLng.lat, lng: evt.latLng.lng }
     const index = this.drawingPoints.length
     this.drawingPoints.push(latlng)
-
-    // 显示临时编号标记，帮助用户确认打点顺序
     this.ctx.overlays.addMarker(`poly-drawing-${index}`, latlng, String(index + 1))
+
+    if (this.drawingPoints.length >= 3) {
+      this.ctx.overlays.setPreviewPolygon(
+        this.PREVIEW_POLY_ID,
+        this.drawingPoints,
+        (id) => this._onPolygonClick(id),
+      )
+    }
 
     const coordsText = coordsToText(this.drawingPoints)
     sendToPanel({
       type: HookEvent.POLYGON_POINT_ADDED,
       payload: { lat: latlng.lat, lng: latlng.lng, index, coordsText },
     })
-    log('polygon point added:', latlng, 'total points:', this.drawingPoints.length)
+    log('polygon point added:', latlng, 'total:', this.drawingPoints.length)
+  }
+
+  /** 鼠标移动时更新橡皮筋预览线（所有已打点 + 当前光标位置）。 */
+  private onMouseMove(evt: any): void {
+    if (!this.ctx || this.mode !== 'drawing' || this.drawingPoints.length === 0) return
+    const cursor: LatLng = { lat: evt.latLng.lat, lng: evt.latLng.lng }
+    this.ctx.overlays.setRubberBand(this.RUBBER_BAND_ID, [...this.drawingPoints, cursor])
   }
 
   /**
-   * 处理地图上多边形的点击事件：高亮选中，通知 panel 更新选中状态。
-   * 重复点击同一多边形不重复触发。
+   * 双击完成多边形。
+   * TMap 双击事件触发顺序：click（第一下）→ click（第二下）→ dblclick。
+   * 第二下 click 已经向 drawingPoints 添加了一个点，这里需要先弹出再提交。
    */
+  private onDblClick(_evt: any): void {
+    if (this.mode !== 'drawing') return
+    this._popLastDrawingPoint()
+    this.finishDrawing()
+  }
+
+  private onKeydown(evt: KeyboardEvent): void {
+    if (evt.key === 'Escape') {
+      evt.preventDefault()
+      this.cancelDrawing()
+    }
+  }
+
+  /** 点击已有多边形时的回调（图层级注册，通过 evt.geometry.id 路由）。 */
   private _onPolygonClick(id: string): void {
+    if (id === this.PREVIEW_POLY_ID) return
+    if (this.mode === 'drawing') return
     if (this.selectedId === id) return
     this.selectedId = id
     this.ctx?.overlays.setPolygonHighlight(id)
@@ -123,7 +274,13 @@ export class PolygonTool implements ITool {
     log('polygon selected:', id)
   }
 
-  /** 移除所有临时绘制标记（poly-drawing-0 到 poly-drawing-N）。 */
+  private _popLastDrawingPoint(): void {
+    if (this.drawingPoints.length === 0) return
+    const lastIdx = this.drawingPoints.length - 1
+    this.ctx?.overlays.removeMarker(`poly-drawing-${lastIdx}`)
+    this.drawingPoints.pop()
+  }
+
   private _clearDrawingMarkers(): void {
     if (!this.ctx) return
     for (let i = 0; i < this.drawingPoints.length; i++) {
