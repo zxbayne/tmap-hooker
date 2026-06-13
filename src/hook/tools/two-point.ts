@@ -65,7 +65,10 @@ export class TwoPointTool implements ITool {
 
       const midLat = (a.lat + b.lat) / 2
       const midLng = (a.lng + b.lng) / 2
-      this.ctx.overlays.addLabel('tp-label', { lat: midLat, lng: midLng }, formatDistance(distanceM))
+      const dLat = Math.abs(b.lat - a.lat) * 111
+      const dLng = Math.abs(b.lng - a.lng) * 96
+      const labelStyleId = dLat > dLng ? 'side' : 'default'
+      this.ctx.overlays.addLabel('tp-label', { lat: midLat, lng: midLng }, formatDistance(distanceM), labelStyleId)
 
       sendToPanel({ type: HookEvent.POINT_ADDED, payload: { index: 1, ...latlng } })
       sendToPanel({

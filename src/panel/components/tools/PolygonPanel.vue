@@ -98,6 +98,35 @@
       </div>
     </div>
 
+    <!-- 坐标导出（选中多边形时显示） -->
+    <div v-if="selectedLayer && selectedLayer.coords.length > 0" class="poly-coords-export">
+      <div class="poly-coords-header">
+        <span>坐标导出</span>
+        <div class="poly-coords-fmt-bar">
+          <button
+            class="poly-coords-fmt-btn"
+            :class="{ active: coordsFmt === 'array' }"
+            @click="coordsFmt = 'array'"
+          >二维数组</button>
+          <button
+            class="poly-coords-fmt-btn"
+            :class="{ active: coordsFmt === 'semicolon' }"
+            @click="coordsFmt = 'semicolon'"
+          >分号格式</button>
+        </div>
+      </div>
+      <textarea
+        class="poly-coords-textarea"
+        readonly
+        :value="formattedCoords"
+        rows="3"
+        spellcheck="false"
+      />
+      <button class="poly-btn draw-btn poly-coords-copy-btn" @click="copyCoords">
+        {{ copied ? '已复制 ✓' : '复制' }}
+      </button>
+    </div>
+
     <!-- 坐标导入（折叠） -->
     <div>
       <div class="poly-import-toggle" @click="coordsExpanded = !coordsExpanded">
@@ -135,7 +164,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, watch, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import type { PolygonLayer } from '../../composables/useTool'
 
 const props = defineProps<{
@@ -161,6 +190,32 @@ const coordsExpanded = ref(false)
 const localCoords = ref('')
 const editingId = ref<string | null>(null)
 const nameInputRef = ref<HTMLInputElement | null>(null)
+
+// 坐标导出
+const coordsFmt = ref<'array' | 'semicolon'>('array')
+const copied = ref(false)
+
+const selectedLayer = computed(() => props.polygonLayers.find((l) => l.selected) ?? null)
+
+const formattedCoords = computed(() => {
+  const coords = selectedLayer.value?.coords ?? []
+  if (coords.length === 0) return ''
+  if (coordsFmt.value === 'array') {
+    return JSON.stringify(coords.map((c) => [c.lat, c.lng]))
+  }
+  return coords.map((c) => `${c.lat},${c.lng}`).join(';')
+})
+
+async function copyCoords() {
+  if (!formattedCoords.value) return
+  try {
+    await navigator.clipboard.writeText(formattedCoords.value)
+    copied.value = true
+    setTimeout(() => { copied.value = false }, 2000)
+  } catch {
+    // clipboard not available
+  }
+}
 
 // 当绘制中的坐标更新时，同步到坐标导入区（若展开）
 watch(() => props.drawingCoordsText, (val) => {

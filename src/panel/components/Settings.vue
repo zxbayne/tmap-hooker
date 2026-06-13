@@ -36,7 +36,7 @@ const emit = defineEmits<{
 
 /** 复选框状态变更时持久化设置并通知父组件（App.vue）向 hook 层发送 SET_DEBUG 命令。 */
 function onDebugChange() {
-  saveSettings({ debug: debug.value })
+  saveSettings({ ...loadSettings(), debug: debug.value })
   emit('debugChange', debug.value)
 }
 </script>

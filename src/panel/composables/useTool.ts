@@ -11,12 +11,13 @@ export interface SegmentInfo {
   label: string
 }
 
-/** 已提交的多边形图层信息，在 Panel 层维护名称、可见性和选中状态。 */
+/** 已提交的多边形图层信息，在 Panel 层维护名称、可见性、选中状态和顶点坐标（供坐标导出）。 */
 export interface PolygonLayer {
   id: string
   name: string
   visible: boolean
   selected: boolean
+  coords: Array<{ lat: number; lng: number }>
 }
 
 export function useTool() {
@@ -102,12 +103,18 @@ export function useTool() {
           name: `多边形 ${++polygonNameCounter}`,
           visible: true,
           selected: false,
+          coords: [],
         })
         break
 
       case HookEvent.POLYGON_SELECTED:
         polygonLayers.value.forEach((l) => {
-          l.selected = l.id === msg.payload.id
+          if (l.id === msg.payload.id) {
+            l.selected = true
+            l.coords = msg.payload.coords
+          } else {
+            l.selected = false
+          }
         })
         break
 

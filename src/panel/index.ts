@@ -2,6 +2,23 @@ import { createApp } from 'vue'
 import App from './App.vue'
 import panelCss from './style/panel.css?inline'
 
+const DEFAULT_WHITELIST = ['lbs.qq.com']
+
+/**
+ * 检查当前网站是否在白名单内。
+ * 白名单存储在 chrome.storage.local 的 'whitelist' 键，默认 ['lbs.qq.com']。
+ * 列表为空时在所有网站启用。
+ */
+async function isWhitelisted(): Promise<boolean> {
+  try {
+    const result = await chrome.storage.local.get('whitelist')
+    const wl: string[] = result.whitelist ?? DEFAULT_WHITELIST
+    return wl.length === 0 || wl.some((d) => location.hostname.includes(d))
+  } catch {
+    return true
+  }
+}
+
 /**
  * 在页面中创建 Shadow DOM 宿主并挂载 Vue 应用。
  *
@@ -11,7 +28,8 @@ import panelCss from './style/panel.css?inline'
  * double-mount 守卫：某些 SPA 页面的路由切换会重新执行 content script，
  * 通过检查 DOM 中是否已存在宿主元素来防止重复挂载。
  */
-function mountPanel() {
+async function mountPanel() {
+  if (!(await isWhitelisted())) return
   if (document.getElementById('tmap-hooker-host')) return
 
   const host = document.createElement('div')

@@ -98,9 +98,10 @@ export interface PolygonDrawnPayload {
   count: number
 }
 
-/** 用户点击地图上某个多边形时发送。 */
+/** 用户点击地图上某个多边形时发送，附带顶点坐标供面板坐标导出功能使用。 */
 export interface PolygonSelectedPayload {
   id: string | null
+  coords: Array<{ lat: number; lng: number }>
 }
 
 /** 多边形被删除后发送。 */

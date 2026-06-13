@@ -124,29 +124,30 @@ export class OverlayManager {
 
   private ensureLabelLayer() {
     if (this.labelLayer) return
+    const labelStyle = {
+      color: 'rgb(238, 117, 45)',
+      size: 12,
+      angle: 0,
+      background: true,
+      backgroundColor: 'rgba(20, 20, 40, 0.85)',
+      borderRadius: 4,
+    }
     this.labelLayer = new this.TMap.MultiLabel({
       id: 'tmap-hooker-labels',
       map: this.map,
       styles: {
-        default: new this.TMap.LabelStyle({
-          color: 'rgb(238, 117, 45)',
-          size: 12,
-          offset: { x: 0, y: -16 },
-          angle: 0,
-          background: true,
-          backgroundColor: 'rgba(20, 20, 40, 0.85)',
-          borderRadius: 4,
-        }),
+        default: new this.TMap.LabelStyle({ ...labelStyle, offset: { x: 0, y: -16 } }),
+        side: new this.TMap.LabelStyle({ ...labelStyle, offset: { x: 22, y: -6 } }),
       },
       geometries: [],
     })
   }
 
-  addLabel(id: string, latlng: LatLng, text: string): void {
+  addLabel(id: string, latlng: LatLng, text: string, styleId = 'default'): void {
     this.ensureLabelLayer()
     const geometry = {
       id,
-      styleId: 'default',
+      styleId,
       position: new this.TMap.LatLng(latlng.lat, latlng.lng),
       content: text,
     }

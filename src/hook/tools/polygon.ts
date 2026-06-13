@@ -12,6 +12,7 @@ export class PolygonTool implements ITool {
   private drawingPoints: LatLng[] = []
   private selectedId: string | null = null
   private polygonIds: Set<string> = new Set()
+  private polygonCoords: Map<string, LatLng[]> = new Map()
   private idCounter = 0
 
   private drawClickHandler: ((evt: any) => void) | null = null
@@ -52,6 +53,7 @@ export class PolygonTool implements ITool {
       }
     }
     this.polygonIds.clear()
+    this.polygonCoords.clear()
     this.selectedId = null
     this.idCounter = 0
     log('PolygonTool reset — all polygons cleared')
@@ -89,8 +91,10 @@ export class PolygonTool implements ITool {
     if (this.drawingPoints.length < 3 || !this.ctx) return
     const id = `poly-${++this.idCounter}`
     const count = this.drawingPoints.length
-    this.ctx.overlays.addPolygon(id, [...this.drawingPoints], (clickedId) => this._onPolygonClick(clickedId))
+    const coords = [...this.drawingPoints]
+    this.ctx.overlays.addPolygon(id, coords, (clickedId) => this._onPolygonClick(clickedId))
     this.polygonIds.add(id)
+    this.polygonCoords.set(id, coords)
     sendToPanel({ type: HookEvent.POLYGON_DRAWN, payload: { id, count } })
     log('polygon finished, id =', id, 'points =', count)
     this.enterIdleMode()
@@ -158,6 +162,7 @@ export class PolygonTool implements ITool {
     const id = `poly-${++this.idCounter}`
     this.ctx.overlays.addPolygon(id, points, (clickedId) => this._onPolygonClick(clickedId))
     this.polygonIds.add(id)
+    this.polygonCoords.set(id, points)
     sendToPanel({ type: HookEvent.POLYGON_DRAWN, payload: { id, count: points.length } })
     log('polygon drawn from input, id =', id, 'points =', points.length)
   }
@@ -191,6 +196,7 @@ export class PolygonTool implements ITool {
     if (!this.ctx) return
     this.ctx.overlays.removePolygon(id)
     this.polygonIds.delete(id)
+    this.polygonCoords.delete(id)
     if (this.selectedId === id) {
       this.selectedId = null
     }
@@ -209,7 +215,8 @@ export class PolygonTool implements ITool {
     if (this.selectedId === id) return
     this.selectedId = id
     this.ctx?.overlays.setPolygonHighlight(id)
-    sendToPanel({ type: HookEvent.POLYGON_SELECTED, payload: { id } })
+    const coords = this.polygonCoords.get(id) ?? []
+    sendToPanel({ type: HookEvent.POLYGON_SELECTED, payload: { id, coords } })
     log('polygon selected by panel:', id)
   }
 
@@ -270,7 +277,8 @@ export class PolygonTool implements ITool {
     if (this.selectedId === id) return
     this.selectedId = id
     this.ctx?.overlays.setPolygonHighlight(id)
-    sendToPanel({ type: HookEvent.POLYGON_SELECTED, payload: { id } })
+    const coords = this.polygonCoords.get(id) ?? []
+    sendToPanel({ type: HookEvent.POLYGON_SELECTED, payload: { id, coords } })
     log('polygon selected:', id)
   }
 

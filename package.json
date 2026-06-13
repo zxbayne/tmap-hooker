@@ -5,11 +5,13 @@
   "scripts": {
     "build:hook": "vite build --config vite.config.hook.ts",
     "build:panel": "vite build --config vite.config.panel.ts",
-    "build": "npm run copy-assets && npm run build:hook && npm run build:panel",
-    "copy-assets": "mkdir -p dist/icons && cp manifest.json dist/manifest.json && cp public/icons/*.png dist/icons/ 2>/dev/null || true",
-    "dev": "concurrently \"npm run build:hook -- --watch\" \"npm run build:panel -- --watch\""
+    "build:popup": "vite build --config vite.config.popup.ts",
+    "build": "npm run copy-assets && npm run build:hook && npm run build:panel && npm run build:popup",
+    "copy-assets": "mkdir -p dist/icons && cp manifest.json dist/manifest.json && cp public/popup.html dist/popup.html && cp public/icons/*.png dist/icons/ 2>/dev/null || true",
+    "dev": "concurrently \"npm run build:hook -- --watch\" \"npm run build:panel -- --watch\" \"npm run build:popup -- --watch\""
   },
   "devDependencies": {
+    "@types/chrome": "^0.1.43",
     "@vitejs/plugin-vue": "^5.0.0",
     "concurrently": "^8.0.0",
     "typescript": "^5.4.0",

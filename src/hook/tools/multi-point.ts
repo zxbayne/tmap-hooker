@@ -94,10 +94,14 @@ export class MultiPointTool implements ITool {
 
       const midLat = (prev.lat + latlng.lat) / 2
       const midLng = (prev.lng + latlng.lng) / 2
+      const dLat = Math.abs(latlng.lat - prev.lat) * 111
+      const dLng = Math.abs(latlng.lng - prev.lng) * 96
+      const labelStyleId = dLat > dLng ? 'side' : 'default'
       this.ctx.overlays.addLabel(
         `mp-label-${idx - 1}`,
         { lat: midLat, lng: midLng },
         formatDistance(segDist),
+        labelStyleId,
       )
 
       sendToPanel({

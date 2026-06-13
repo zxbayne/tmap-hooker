@@ -1,7 +1,8 @@
 <template>
-  <!-- 折叠状态：显示小球，点击展开 -->
-  <div v-if="isCollapsed" class="mini-ball" @click="expand" title="TMap 工具">
-    📍
+  <!-- 折叠状态：右边缘小标签，点击展开 -->
+  <div v-if="isCollapsed" class="mini-tab" @click="expand" title="展开 TMap 工具">
+    <span>📍</span>
+    <span class="mini-tab-text">TMap</span>
   </div>
 
   <!-- 展开状态：显示完整面板 -->
@@ -148,13 +149,20 @@ function onMouseUp() {
   dragging = false
 }
 
+function onResize() {
+  pos.x = Math.max(0, Math.min(window.innerWidth - 248, pos.x))
+  pos.y = Math.max(0, Math.min(window.innerHeight - 100, pos.y))
+}
+
 onMounted(() => {
   document.addEventListener('mousemove', onMouseMove)
   document.addEventListener('mouseup', onMouseUp)
+  window.addEventListener('resize', onResize)
 })
 
 onUnmounted(() => {
   document.removeEventListener('mousemove', onMouseMove)
   document.removeEventListener('mouseup', onMouseUp)
+  window.removeEventListener('resize', onResize)
 })
 </script>
