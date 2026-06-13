@@ -195,7 +195,7 @@ export class OverlayManager {
         hidden: new this.TMap.PolygonStyle({
           color: 'rgba(0,0,0,0)',
           borderColor: 'rgba(0,0,0,0)',
-          borderWidth: 0,
+          borderWidth: 1,
           borderDashArray: [0, 0],
         }),
       },
@@ -313,8 +313,9 @@ export class OverlayManager {
       styles: {
         default: new this.TMap.PolylineStyle({
           color: 'rgba(255, 107, 53, 0.55)',
-          width: 1.5,
-          borderWidth: 0,
+          width: 2,
+          borderWidth: 1,
+          borderColor: 'rgba(255, 107, 53, 0.2)',
           lineCap: 'round',
         }),
       },
