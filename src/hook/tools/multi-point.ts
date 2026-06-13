@@ -1,4 +1,15 @@
 import { haversine, formatDistance } from '@shared/utils/distance'
+
+function getLabelStyleId(a: { lat: number; lng: number }, b: { lat: number; lng: number }): string {
+  const dLng = b.lng - a.lng
+  const dLat = b.lat - a.lat
+  let angle = Math.atan2(dLat, dLng) * 180 / Math.PI
+  angle = ((angle % 180) + 180) % 180
+  if (angle < 22.5 || angle >= 157.5) return 'label-up'
+  if (angle < 67.5)                   return 'label-up-left'
+  if (angle < 112.5)                  return 'label-right'
+  return                                     'label-up-right'
+}
 import { HookEvent, PanelCmd, sendToPanel } from '@shared/protocol'
 import { TOOL_IDS } from '@shared/tool-config'
 import type { ITool, ToolContext, LatLng } from './types'
@@ -94,14 +105,11 @@ export class MultiPointTool implements ITool {
 
       const midLat = (prev.lat + latlng.lat) / 2
       const midLng = (prev.lng + latlng.lng) / 2
-      const dLat = Math.abs(latlng.lat - prev.lat) * 111
-      const dLng = Math.abs(latlng.lng - prev.lng) * 96
-      const labelStyleId = dLat > dLng ? 'side' : 'default'
       this.ctx.overlays.addLabel(
         `mp-label-${idx - 1}`,
         { lat: midLat, lng: midLng },
         formatDistance(segDist),
-        labelStyleId,
+        getLabelStyleId(prev, latlng),
       )
 
       sendToPanel({

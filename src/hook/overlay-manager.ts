@@ -124,7 +124,7 @@ export class OverlayManager {
 
   private ensureLabelLayer() {
     if (this.labelLayer) return
-    const labelStyle = {
+    const base = {
       color: 'rgb(238, 117, 45)',
       size: 12,
       angle: 0,
@@ -136,8 +136,14 @@ export class OverlayManager {
       id: 'tmap-hooker-labels',
       map: this.map,
       styles: {
-        default: new this.TMap.LabelStyle({ ...labelStyle, offset: { x: 0, y: -16 } }),
-        side: new this.TMap.LabelStyle({ ...labelStyle, offset: { x: 22, y: -6 } }),
+        // E-W 线段 → 标签在正上方
+        'label-up':        new this.TMap.LabelStyle({ ...base, offset: { x: 0,   y: -20 } }),
+        // N-S 线段 → 标签在正右方
+        'label-right':     new this.TMap.LabelStyle({ ...base, offset: { x: 22,  y:   0 } }),
+        // NE-SW 线段 → 标签在左上方（垂直于线段）
+        'label-up-left':   new this.TMap.LabelStyle({ ...base, offset: { x: -14, y: -14 } }),
+        // NW-SE 线段 → 标签在右上方（垂直于线段）
+        'label-up-right':  new this.TMap.LabelStyle({ ...base, offset: { x: 14,  y: -14 } }),
       },
       geometries: [],
     })

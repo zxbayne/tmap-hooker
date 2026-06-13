@@ -28,7 +28,7 @@
         <button class="add-btn" @click="addDomain" :disabled="!newDomain.trim()">添加</button>
       </div>
 
-      <div v-if="saved" class="save-hint">已保存，刷新页面后生效</div>
+      <div v-if="saved" class="save-hint">{{ saveHint }}</div>
     </div>
   </div>
 </template>
@@ -41,6 +41,7 @@ const DEFAULT_WHITELIST = ['lbs.qq.com']
 const whitelist = ref<string[]>([])
 const newDomain = ref('')
 const saved = ref(false)
+const saveHint = ref('')
 
 onMounted(async () => {
   const result = await chrome.storage.local.get('whitelist')
@@ -49,6 +50,18 @@ onMounted(async () => {
 
 async function save() {
   await chrome.storage.local.set({ whitelist: whitelist.value })
+  // 通知当前标签页内容脚本实时更新（挂载或卸载面板）
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    if (tab?.id) {
+      await chrome.tabs.sendMessage(tab.id, { type: 'WHITELIST_UPDATED' }).catch(() => {})
+      saveHint.value = '已保存并立即生效'
+    } else {
+      saveHint.value = '已保存'
+    }
+  } catch {
+    saveHint.value = '已保存'
+  }
   saved.value = true
   setTimeout(() => { saved.value = false }, 2500)
 }

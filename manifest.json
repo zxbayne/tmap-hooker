@@ -15,7 +15,7 @@
       "48": "icons/icon48.png"
     }
   },
-  "permissions": ["storage"],
+  "permissions": ["storage", "tabs"],
   "content_scripts": [
     {
       "matches": ["<all_urls>"],

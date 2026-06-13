@@ -5,11 +5,11 @@
     <span class="mini-tab-text">TMap</span>
   </div>
 
-  <!-- 展开状态：显示完整面板 -->
+  <!-- 展开状态：显示完整面板（始终贴靠右侧，仅垂直可拖动） -->
   <div
     v-else
     class="floating-panel"
-    :style="{ left: pos.x + 'px', top: pos.y + 'px' }"
+    :style="{ right: '10px', top: posY + 'px' }"
   >
     <!-- 标题栏 / 拖拽区域 -->
     <div class="panel-header" @mousedown.prevent="startDrag">
@@ -73,7 +73,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useTool } from './composables/useTool'
 import ToolBar from './components/ToolBar.vue'
 import ResultPanel from './components/ResultPanel.vue'
@@ -128,21 +128,19 @@ function toggleSettings() {
   showSettings.value = !showSettings.value
 }
 
-// ── 面板拖拽功能 ───────────────────────────────────────────────────────────────
-const pos = reactive({ x: window.innerWidth - 260, y: 20 })
+// ── 面板垂直拖拽（始终贴靠右侧，仅垂直可移动）────────────────────────────────
+const posY = ref(20)
 let dragging = false
-let dragOffset = { x: 0, y: 0 }
+let dragOffsetY = 0
 
 function startDrag(e: MouseEvent) {
   dragging = true
-  dragOffset.x = e.clientX - pos.x
-  dragOffset.y = e.clientY - pos.y
+  dragOffsetY = e.clientY - posY.value
 }
 
 function onMouseMove(e: MouseEvent) {
   if (!dragging) return
-  pos.x = Math.max(0, Math.min(window.innerWidth - 240, e.clientX - dragOffset.x))
-  pos.y = Math.max(0, Math.min(window.innerHeight - 100, e.clientY - dragOffset.y))
+  posY.value = Math.max(0, Math.min(window.innerHeight - 100, e.clientY - dragOffsetY))
 }
 
 function onMouseUp() {
@@ -150,8 +148,7 @@ function onMouseUp() {
 }
 
 function onResize() {
-  pos.x = Math.max(0, Math.min(window.innerWidth - 248, pos.x))
-  pos.y = Math.max(0, Math.min(window.innerHeight - 100, pos.y))
+  posY.value = Math.max(0, Math.min(window.innerHeight - 100, posY.value))
 }
 
 onMounted(() => {
