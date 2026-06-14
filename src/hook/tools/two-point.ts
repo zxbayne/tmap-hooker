@@ -1,25 +1,10 @@
-import { haversine, formatDistance } from '@shared/utils/distance'
+import { haversine, formatDistance, getLabelStyleId } from '@shared/utils/distance'
 import { HookEvent, sendToPanel } from '@shared/protocol'
 import { TOOL_IDS } from '@shared/tool-config'
 import { log } from '../logger'
 import type { ITool, ToolContext, LatLng } from './types'
 
 type State = 'idle' | 'waiting-a' | 'waiting-b'
-
-/**
- * 根据线段方向计算标签样式 id，确保标签始终偏移到线段的垂直方向（不重叠）。
- * 将地理角度折叠到 [0°, 180°)（双向线段同一垂直），再映射到 4 个方向区间。
- */
-function getLabelStyleId(a: { lat: number; lng: number }, b: { lat: number; lng: number }): string {
-  const dLng = b.lng - a.lng
-  const dLat = b.lat - a.lat
-  let angle = Math.atan2(dLat, dLng) * 180 / Math.PI
-  angle = ((angle % 180) + 180) % 180
-  if (angle < 22.5 || angle >= 157.5) return 'label-up'
-  if (angle < 67.5)                   return 'label-up-left'
-  if (angle < 112.5)                  return 'label-right'
-  return                                     'label-up-right'
-}
 
 export class TwoPointTool implements ITool {
   readonly id = TOOL_IDS.TWO_POINT

@@ -173,12 +173,14 @@ function onMouseMove(e: MouseEvent) {
   if (miniDragging) {
     miniHasMoved = true
     miniTabY.value = Math.max(0, Math.min(window.innerHeight - 80, e.clientY - miniDragOffsetY))
-    localStorage.setItem(MINI_Y_KEY, String(miniTabY.value))
   }
 }
 
 function onMouseUp() {
   dragging = false
+  if (miniDragging) {
+    localStorage.setItem(MINI_Y_KEY, String(miniTabY.value))
+  }
   miniDragging = false
 }
 

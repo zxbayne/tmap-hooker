@@ -31,3 +31,15 @@ export function formatDistance(meters: number): string {
   }
   return `${Math.round(meters)} m`
 }
+
+/** 根据线段方向返回标签样式 id，确保标签始终偏移到线段的垂直方向（不重叠）。 */
+export function getLabelStyleId(a: { lat: number; lng: number }, b: { lat: number; lng: number }): string {
+  const dLng = b.lng - a.lng
+  const dLat = b.lat - a.lat
+  let angle = Math.atan2(dLat, dLng) * 180 / Math.PI
+  angle = ((angle % 180) + 180) % 180
+  if (angle < 22.5 || angle >= 157.5) return 'label-up'
+  if (angle < 67.5)                   return 'label-up-left'
+  if (angle < 112.5)                  return 'label-right'
+  return                                     'label-up-right'
+}

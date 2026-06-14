@@ -25,7 +25,7 @@ export class PolygonTool implements ITool {
   private dragStartLatLng: { lat: number; lng: number } | null = null
   private dragOriginalCoords: LatLng[] | null = null
   private draggingId: string | null = null
-  private lastDragLatLng: { lat: number; lng: number } | null = null
+  private dragCurrentCoords: LatLng[] | null = null
   private _justFinishedDrag = false
   private dragMoveHandler: ((evt: any) => void) | null = null
   private dragUpHandler: (() => void) | null = null
@@ -349,7 +349,7 @@ export class PolygonTool implements ITool {
     this.draggingId = id
     this.dragStartLatLng = { lat: latLng.lat, lng: latLng.lng }
     this.dragOriginalCoords = [...originalCoords]
-    this.lastDragLatLng = { lat: latLng.lat, lng: latLng.lng }
+    this.dragCurrentCoords = null
 
     try {
       this.ctx.map.setDraggable(false)
@@ -369,22 +369,19 @@ export class PolygonTool implements ITool {
     if (!this.isDragging || !this.dragStartLatLng || !this.dragOriginalCoords || !this.draggingId || !this.ctx) return
     const dLat = evt.latLng.lat - this.dragStartLatLng.lat
     const dLng = evt.latLng.lng - this.dragStartLatLng.lng
-    this.lastDragLatLng = { lat: evt.latLng.lat, lng: evt.latLng.lng }
     const newCoords = this.dragOriginalCoords.map((p) => ({ lat: p.lat + dLat, lng: p.lng + dLng }))
+    this.dragCurrentCoords = newCoords
     console.log('[TMH:drag] move — dLat:', dLat.toFixed(6), 'dLng:', dLng.toFixed(6))
     this.ctx.overlays.updatePolygonPath(this.draggingId, newCoords)
   }
 
   private _onDragUp(): void {
-    console.log('[TMH:drag] _onDragUp called — isDragging:', this.isDragging, 'lastLatLng:', this.lastDragLatLng)
-    if (!this.isDragging || !this.dragStartLatLng || !this.dragOriginalCoords || !this.draggingId || !this.ctx) {
+    console.log('[TMH:drag] _onDragUp called — isDragging:', this.isDragging)
+    if (!this.isDragging || !this.dragOriginalCoords || !this.draggingId || !this.ctx) {
       console.log('[TMH:drag] _onDragUp SKIPPED — missing state')
       return
     }
-    const last = this.lastDragLatLng ?? this.dragStartLatLng
-    const dLat = last.lat - this.dragStartLatLng.lat
-    const dLng = last.lng - this.dragStartLatLng.lng
-    const finalCoords = this.dragOriginalCoords.map((p) => ({ lat: p.lat + dLat, lng: p.lng + dLng }))
+    const finalCoords = this.dragCurrentCoords ?? [...this.dragOriginalCoords]
     const id = this.draggingId
 
     this.polygonCoords.set(id, finalCoords)
@@ -417,7 +414,7 @@ export class PolygonTool implements ITool {
     this.draggingId = null
     this.dragStartLatLng = null
     this.dragOriginalCoords = null
-    this.lastDragLatLng = null
+    this.dragCurrentCoords = null
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────

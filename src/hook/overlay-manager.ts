@@ -175,23 +175,21 @@ export class OverlayManager {
 
   // ── Polygons ──────────────────────────────────────────────────────────────
 
+  private _attachMousedownHandler(): void {
+    this.polygonLayer.on('mousedown', (evt: any) => {
+      const id: string = evt.geometry?.id
+      if (id) {
+        evt.originalEvent?.stopPropagation()
+        this.onPolygonMousedown?.(id, evt.latLng)
+      }
+    })
+  }
+
   private ensurePolygonLayer(onClickCb: (id: string) => void, onMousedownCb?: (id: string, latLng: any) => void) {
     if (this.polygonLayer) {
-      // 层已存在但 mousedown 尚未注册（首次由 setPreviewPolygon 创建时无回调），补充注册
       if (onMousedownCb && !this.onPolygonMousedown) {
-        console.log('[TMH:overlay] late-registering mousedown on existing polygon layer')
         this.onPolygonMousedown = onMousedownCb
-        this.polygonLayer.on('mousedown', (evt: any) => {
-          const id: string = evt.geometry?.id
-          console.log('[TMH:overlay] polygon mousedown fired, geometry id:', id, 'latLng:', evt.latLng, 'originalEvent:', evt.originalEvent)
-          if (id) {
-            console.log('[TMH:overlay] calling stopPropagation and mousedown cb for id:', id)
-            evt.originalEvent?.stopPropagation()
-            this.onPolygonMousedown?.(id, evt.latLng)
-          } else {
-            console.log('[TMH:overlay] mousedown ignored — no geometry id')
-          }
-        })
+        this._attachMousedownHandler()
       }
       return
     }
@@ -235,20 +233,16 @@ export class OverlayManager {
     })
     if (onMousedownCb) {
       this.onPolygonMousedown = onMousedownCb
-      this.polygonLayer.on('mousedown', (evt: any) => {
-        const id: string = evt.geometry?.id
-        console.log('[TMH:overlay] polygon mousedown fired, geometry id:', id, 'latLng:', evt.latLng, 'originalEvent:', evt.originalEvent)
-        if (id) {
-          console.log('[TMH:overlay] calling stopPropagation and mousedown cb for id:', id)
-          evt.originalEvent?.stopPropagation()
-          this.onPolygonMousedown?.(id, evt.latLng)
-        } else {
-          console.log('[TMH:overlay] mousedown ignored — no geometry id')
-        }
-      })
-    } else {
-      console.log('[TMH:overlay] ensurePolygonLayer called WITHOUT mousedown callback')
+      this._attachMousedownHandler()
     }
+  }
+
+  private _closedPath(points: LatLng[]): any[] {
+    const closed = [...points]
+    const first = closed[0]
+    const last = closed[closed.length - 1]
+    if (first.lat !== last.lat || first.lng !== last.lng) closed.push(first)
+    return closed.map((p) => new this.TMap.LatLng(p.lat, p.lng))
   }
 
   /**
@@ -258,14 +252,7 @@ export class OverlayManager {
   addPolygon(id: string, points: LatLng[], onClickCb: (id: string) => void, onMousedownCb?: (id: string, latLng: any) => void): void {
     this.ensurePolygonLayer(onClickCb, onMousedownCb)
 
-    const closed = [...points]
-    const first = closed[0]
-    const last = closed[closed.length - 1]
-    if (first.lat !== last.lat || first.lng !== last.lng) {
-      closed.push(first)
-    }
-
-    const path = closed.map((p) => new this.TMap.LatLng(p.lat, p.lng))
+    const path = this._closedPath(points)
     const geometry = { id, styleId: 'default', paths: [path] }
 
     if (this.polygons.has(id)) {
@@ -288,12 +275,7 @@ export class OverlayManager {
   /** 实时更新多边形路径，用于拖拽过程中的位置预览。不更新 polygons 缓存，由调用方在拖拽结束后调 addPolygon 提交。 */
   updatePolygonPath(id: string, points: LatLng[]): void {
     if (!this.polygonLayer) return
-    const closed = [...points]
-    const first = closed[0]
-    const last = closed[closed.length - 1]
-    if (first.lat !== last.lat || first.lng !== last.lng) closed.push(first)
-    const path = closed.map((p) => new this.TMap.LatLng(p.lat, p.lng))
-    this.polygonLayer.updateGeometries([{ id, styleId: 'highlight', paths: [path] }])
+    this.polygonLayer.updateGeometries([{ id, styleId: 'highlight', paths: [this._closedPath(points)] }])
   }
 
   /**
@@ -304,21 +286,14 @@ export class OverlayManager {
     if (points.length < 3) return
     this.ensurePolygonLayer(onClickCb, onMousedownCb)
 
-    const closed = [...points]
-    const first = closed[0]
-    const last = closed[closed.length - 1]
-    if (first.lat !== last.lat || first.lng !== last.lng) {
-      closed.push(first)
-    }
-    const path = closed.map((p) => new this.TMap.LatLng(p.lat, p.lng))
-    const geometry = { id, styleId: 'preview', paths: [path] }
+    const geometry = { id, styleId: 'preview', paths: [this._closedPath(points)] }
 
     if (this.previewPaths !== null) {
       this.polygonLayer.updateGeometries([geometry])
     } else {
       this.polygonLayer.add([geometry])
     }
-    this.previewPaths = [path]
+    this.previewPaths = []
   }
 
   /** 移除预览多边形。 */
