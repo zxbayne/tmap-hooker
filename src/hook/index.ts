@@ -74,5 +74,20 @@ window.addEventListener('message', (event: MessageEvent) => {
     case PanelCmd.CANCEL_EDIT_POLYGON:
       toolManager.cancelEditPolygon()
       break
+    case PanelCmd.DELETE_POINT_MARKER:
+      toolManager.deletePointMarker(msg.payload.id)
+      break
+    case PanelCmd.SELECT_POINT_MARKER:
+      toolManager.selectPointMarker(msg.payload.id)
+      break
+    case PanelCmd.TOGGLE_POINT_MARKER_VISIBLE:
+      toolManager.togglePointMarkerVisible(msg.payload.id, msg.payload.visible)
+      break
+    case PanelCmd.RENAME_POINT_MARKER:
+      toolManager.renamePointMarker(msg.payload.id, msg.payload.name)
+      break
+    case PanelCmd.IMPORT_POINT_MARKERS:
+      toolManager.importPointMarkers(msg.payload.input)
+      break
   }
 })

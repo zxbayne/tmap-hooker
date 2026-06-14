@@ -2,7 +2,9 @@ import { OverlayManager } from './overlay-manager'
 import { TwoPointTool } from './tools/two-point'
 import { MultiPointTool } from './tools/multi-point'
 import { PolygonTool } from './tools/polygon'
+import { PointMarkerTool } from './tools/point-marker'
 import { sendToPanel, HookEvent } from '@shared/protocol'
+import { TOOL_IDS } from '@shared/tool-config'
 import { log } from './logger'
 import type { ITool, ToolContext } from './tools/types'
 
@@ -17,6 +19,7 @@ export class ToolManager {
     this.register(new TwoPointTool())
     this.register(new MultiPointTool())
     this.register(new PolygonTool())
+    this.register(new PointMarkerTool())
   }
 
   register(tool: ITool): void {
@@ -43,7 +46,8 @@ export class ToolManager {
 
     if (this.activeTool) {
       this.activeTool.deactivate()
-      if (this.activeTool.id !== 'polygon') {
+      const persistentTools = new Set([TOOL_IDS.POLYGON, TOOL_IDS.POINT_MARKER])
+      if (!persistentTools.has(this.activeTool.id as any)) {
         this.overlays.clearMeasurement()
       }
     }
@@ -97,7 +101,7 @@ export class ToolManager {
   }
 
   selectPolygonById(id: string): void {
-    this._polygon()?.selectById(id)
+    this._polygon()?.selectById(id, true)
   }
 
   togglePolygonVisible(id: string, visible: boolean): void {
@@ -114,6 +118,32 @@ export class ToolManager {
 
   cancelEditPolygon(): void {
     this._polygon()?.cancelEdit()
+  }
+
+  // ── Point marker commands ─────────────────────────────────────────────────
+
+  private _pointMarker(): PointMarkerTool | null {
+    return this.activeTool instanceof PointMarkerTool ? this.activeTool : null
+  }
+
+  deletePointMarker(id: string): void {
+    this._pointMarker()?.deleteById(id)
+  }
+
+  selectPointMarker(id: string): void {
+    this._pointMarker()?.selectById(id, true)
+  }
+
+  togglePointMarkerVisible(id: string, visible: boolean): void {
+    this._pointMarker()?.setVisible(id, visible)
+  }
+
+  renamePointMarker(id: string, name: string): void {
+    this._pointMarker()?.renameById(id, name)
+  }
+
+  importPointMarkers(input: string): void {
+    this._pointMarker()?.importFromInput(input)
   }
 
   // ── General tool commands ─────────────────────────────────────────────────

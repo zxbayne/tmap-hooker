@@ -30,6 +30,15 @@
       @finish-edit="emit('finishEdit')"
       @cancel-edit="emit('cancelEdit')"
     />
+    <PointPanel
+      v-else-if="activeTool === TOOL_IDS.POINT_MARKER"
+      :point-markers="pointMarkers"
+      @delete-point="(id) => emit('deletePoint', id)"
+      @rename-point="(id, name) => emit('renamePoint', id, name)"
+      @toggle-visible="(id) => emit('togglePointVisible', id)"
+      @select-point="(id, multi) => emit('selectPoint', id, multi)"
+      @import-points="(input) => emit('importPoints', input)"
+    />
   </div>
 </template>
 
@@ -37,10 +46,11 @@
 import { computed } from 'vue'
 import { TOOL_IDS } from '@shared/tool-config'
 import type { MeasurementResultPayload } from '@shared/protocol'
-import type { SegmentInfo, PolygonLayer } from '../composables/useTool'
+import type { SegmentInfo, PolygonLayer, PointMarkerItem } from '../composables/useTool'
 import TwoPointResult from './tools/TwoPointResult.vue'
 import MultiPointResult from './tools/MultiPointResult.vue'
 import PolygonPanel from './tools/PolygonPanel.vue'
+import PointPanel from './tools/PointPanel.vue'
 
 const props = defineProps<{
   activeTool: string
@@ -53,6 +63,8 @@ const props = defineProps<{
   drawingPointCount: number
   polygonLayers: PolygonLayer[]
   editingPolygonId: string | null
+  // point marker
+  pointMarkers: PointMarkerItem[]
 }>()
 
 const emit = defineEmits<{
@@ -68,12 +80,19 @@ const emit = defineEmits<{
   startEdit: [id: string]
   finishEdit: []
   cancelEdit: []
+  // point marker
+  deletePoint: [id: string]
+  renamePoint: [id: string, name: string]
+  togglePointVisible: [id: string]
+  selectPoint: [id: string, multiSelect: boolean]
+  importPoints: [input: string]
 }>()
 
 const showResult = computed(
   () =>
     props.activeTool !== '' ||
     props.twoPointResult !== null ||
-    props.segments.length > 0,
+    props.segments.length > 0 ||
+    props.pointMarkers.length > 0,
 )
 </script>

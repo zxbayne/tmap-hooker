@@ -29,6 +29,9 @@ export const enum HookEvent {
   POLYGON_EDIT_STARTED = 'POLYGON_EDIT_STARTED',
   POLYGON_EDIT_FINISHED = 'POLYGON_EDIT_FINISHED',
   POLYGON_EDIT_CANCELLED = 'POLYGON_EDIT_CANCELLED',
+  // 打点标记工具事件
+  POINT_MARKER_ADDED = 'POINT_MARKER_ADDED',
+  POINT_MARKER_DELETED = 'POINT_MARKER_DELETED',
 }
 
 // Panel → Hook 命令：panel 层用户操作时发送给 hook
@@ -51,6 +54,12 @@ export const enum PanelCmd {
   START_EDIT_POLYGON = 'START_EDIT_POLYGON',
   FINISH_EDIT_POLYGON = 'FINISH_EDIT_POLYGON',
   CANCEL_EDIT_POLYGON = 'CANCEL_EDIT_POLYGON',
+  // 打点标记工具命令
+  DELETE_POINT_MARKER = 'DELETE_POINT_MARKER',
+  SELECT_POINT_MARKER = 'SELECT_POINT_MARKER',
+  TOGGLE_POINT_MARKER_VISIBLE = 'TOGGLE_POINT_MARKER_VISIBLE',
+  RENAME_POINT_MARKER = 'RENAME_POINT_MARKER',
+  IMPORT_POINT_MARKERS = 'IMPORT_POINT_MARKERS',
 }
 
 // ── Hook → Panel payload 类型 ────────────────────────────────────────────────
@@ -135,6 +144,19 @@ export interface PolygonEditCancelledPayload {
   id: string
 }
 
+/** 打点标记工具：新增一个点位时发送。 */
+export interface PointMarkerAddedPayload {
+  id: string
+  lat: number
+  lng: number
+  name: string
+}
+
+/** 打点标记工具：点位被删除时发送。 */
+export interface PointMarkerDeletedPayload {
+  id: string
+}
+
 // ── Panel → Hook payload 类型 ────────────────────────────────────────────────
 
 /** 切换工具的命令，toolId 为空字符串时表示取消激活。 */
@@ -173,6 +195,33 @@ export interface StartEditPolygonPayload {
   id: string
 }
 
+/** 删除指定点位。 */
+export interface DeletePointMarkerPayload {
+  id: string
+}
+
+/** Panel 主动选中指定点位。 */
+export interface SelectPointMarkerPayload {
+  id: string
+}
+
+/** 切换指定点位的可见性。 */
+export interface TogglePointMarkerVisiblePayload {
+  id: string
+  visible: boolean
+}
+
+/** 重命名点位（同步地图标签）。 */
+export interface RenamePointMarkerPayload {
+  id: string
+  name: string
+}
+
+/** 从坐标文本批量导入点位。 */
+export interface ImportPointMarkersPayload {
+  input: string
+}
+
 // ── 消息联合类型（用于 TypeScript 类型收窄） ────────────────────────────────
 
 /**
@@ -196,6 +245,8 @@ export type HookMessage =
   | { source: typeof HOOK_SOURCE; type: HookEvent.POLYGON_EDIT_STARTED; payload: PolygonEditStartedPayload }
   | { source: typeof HOOK_SOURCE; type: HookEvent.POLYGON_EDIT_FINISHED; payload: PolygonEditFinishedPayload }
   | { source: typeof HOOK_SOURCE; type: HookEvent.POLYGON_EDIT_CANCELLED; payload: PolygonEditCancelledPayload }
+  | { source: typeof HOOK_SOURCE; type: HookEvent.POINT_MARKER_ADDED; payload: PointMarkerAddedPayload }
+  | { source: typeof HOOK_SOURCE; type: HookEvent.POINT_MARKER_DELETED; payload: PointMarkerDeletedPayload }
 
 export type PanelMessage =
   | { source: typeof PANEL_SOURCE; type: PanelCmd.PANEL_READY }
@@ -215,6 +266,11 @@ export type PanelMessage =
   | { source: typeof PANEL_SOURCE; type: PanelCmd.START_EDIT_POLYGON; payload: StartEditPolygonPayload }
   | { source: typeof PANEL_SOURCE; type: PanelCmd.FINISH_EDIT_POLYGON }
   | { source: typeof PANEL_SOURCE; type: PanelCmd.CANCEL_EDIT_POLYGON }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.DELETE_POINT_MARKER; payload: DeletePointMarkerPayload }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.SELECT_POINT_MARKER; payload: SelectPointMarkerPayload }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.TOGGLE_POINT_MARKER_VISIBLE; payload: TogglePointMarkerVisiblePayload }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.RENAME_POINT_MARKER; payload: RenamePointMarkerPayload }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.IMPORT_POINT_MARKERS; payload: ImportPointMarkersPayload }
 
 /** 从 hook 层向 panel 层发送事件消息（自动附加 source 字段）。 */
 export function sendToPanel(msg: DistributiveOmit<HookMessage, 'source'>): void {

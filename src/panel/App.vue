@@ -55,6 +55,7 @@
       :drawing-point-count="drawingPointCount"
       :polygon-layers="polygonLayers"
       :editing-polygon-id="editingPolygonId"
+      :point-markers="pointMarkers"
       @start-drawing="startDrawingPolygon"
       @finish-drawing="finishDrawingPolygon"
       @cancel-drawing="cancelDrawingPolygon"
@@ -67,6 +68,11 @@
       @start-edit="(id) => startEditPolygon(id)"
       @finish-edit="finishEditPolygon"
       @cancel-edit="cancelEditPolygon"
+      @delete-point="(id) => deletePointMarker(id)"
+      @rename-point="(id, name) => renamePointMarker(id, name)"
+      @toggle-point-visible="(id) => togglePointMarkerVisible(id)"
+      @select-point="(id, multi) => selectPointMarkerFromPanel(id, multi)"
+      @import-points="(input) => importPointMarkers(input)"
     />
 
     <!-- 操作按钮栏（多边形工具激活时隐藏） -->
@@ -101,6 +107,7 @@ const {
   drawingPointCount,
   polygonLayers,
   editingPolygonId,
+  pointMarkers,
   setTool,
   finish,
   undo,
@@ -117,6 +124,11 @@ const {
   startEditPolygon,
   finishEditPolygon,
   cancelEditPolygon,
+  deletePointMarker,
+  selectPointMarkerFromPanel,
+  togglePointMarkerVisible,
+  renamePointMarker,
+  importPointMarkers,
   setDebug,
 } = useTool()
 

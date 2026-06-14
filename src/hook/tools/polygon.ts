@@ -255,12 +255,15 @@ export class PolygonTool implements ITool {
   }
 
   /** Panel 图层列表选中某行时主动触发高亮（非地图点击路径）。 */
-  selectById(id: string): void {
+  selectById(id: string, panToLocation = false): void {
     if (this.mode === 'drawing') return
     if (this.selectedId === id) return
     this.selectedId = id
     this.ctx?.overlays.setPolygonHighlight(id)
     const coords = this.polygonCoords.get(id) ?? []
+    if (panToLocation && coords.length > 0 && this.ctx) {
+      this._panToCenter(coords)
+    }
     sendToPanel({ type: HookEvent.POLYGON_SELECTED, payload: { id, coords } })
     log('polygon selected by panel:', id)
   }
@@ -612,6 +615,21 @@ export class PolygonTool implements ITool {
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
+
+  private _panToCenter(coords: LatLng[]): void {
+    if (!this.ctx) return
+    const lats = coords.map((p) => p.lat)
+    const lngs = coords.map((p) => p.lng)
+    const centerLat = (Math.min(...lats) + Math.max(...lats)) / 2
+    const centerLng = (Math.min(...lngs) + Math.max(...lngs)) / 2
+    const TMap = (window as any).TMap
+    const center = new TMap.LatLng(centerLat, centerLng)
+    if (typeof this.ctx.map.panTo === 'function') {
+      this.ctx.map.panTo(center)
+    } else {
+      this.ctx.map.setCenter(center)
+    }
+  }
 
   private _popLastDrawingPoint(): void {
     if (this.drawingPoints.length === 0) return

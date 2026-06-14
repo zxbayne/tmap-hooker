@@ -56,3 +56,55 @@ export function parseCoords(input: string): LatLng[] | null {
 export function coordsToText(points: LatLng[]): string {
   return JSON.stringify(points.map((p) => [p.lng, p.lat]))
 }
+
+/**
+ * 解析打点标记的坐标字符串，支持三种格式（最少 1 个点）：
+ * - **一维数组**：`[lng, lat]` → 1 个点
+ * - **二维数组**：`[[lng,lat],[lng,lat],...]` → 多个点
+ * - **分号格式**：`lng,lat;lng,lat;...` → 多个点
+ */
+export function parsePointCoords(input: string): LatLng[] | null {
+  const s = input.trim()
+  if (!s) return null
+
+  // 二维数组 [[lng,lat],...]
+  if (s.startsWith('[[')) {
+    try {
+      const arr = JSON.parse(s)
+      if (!Array.isArray(arr) || arr.length === 0) return null
+      const result = arr.map(([lng, lat]: [number, number]) => ({ lat, lng }))
+      if (result.some((p) => isNaN(p.lat) || isNaN(p.lng))) return null
+      return result
+    } catch {
+      return null
+    }
+  }
+
+  // 一维数组 [lng,lat]
+  if (s.startsWith('[')) {
+    try {
+      const arr = JSON.parse(s)
+      if (!Array.isArray(arr) || arr.length < 2) return null
+      const lng = Number(arr[0])
+      const lat = Number(arr[1])
+      if (isNaN(lat) || isNaN(lng)) return null
+      return [{ lat, lng }]
+    } catch {
+      return null
+    }
+  }
+
+  // 分号格式 lng,lat;lng,lat;...
+  if (s.includes(';')) {
+    const pairs = s.split(';').map((p) => p.trim()).filter(Boolean)
+    if (pairs.length === 0) return null
+    const result = pairs.map((p) => {
+      const parts = p.split(',').map(Number)
+      return { lat: parts[1], lng: parts[0] }
+    })
+    if (result.some((p) => isNaN(p.lat) || isNaN(p.lng))) return null
+    return result
+  }
+
+  return null
+}

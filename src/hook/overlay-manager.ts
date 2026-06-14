@@ -13,6 +13,9 @@ export class OverlayManager {
   private labelLayer: any = null
   private polygonLayer: any = null
   private rubberBandLayer: any = null
+  /** 持久点位图层（不被 clearMeasurement 清除）。 */
+  private pointMarkerLayer: any = null
+  private pointLabelLayer: any = null
 
   /** 已添加的标记 id 集合，用于区分 add 和 update 操作。 */
   private markers: Map<string, boolean> = new Map()
@@ -27,6 +30,11 @@ export class OverlayManager {
   /** 预览多边形路径，由 setPreviewPolygon 管理，独立于 polygons。 */
   private previewPaths: any[] | null = null
   private rubberBands: Map<string, boolean> = new Map()
+  /** 持久点位 track。 */
+  private pointMarkers: Map<string, LatLng> = new Map()
+  private pointMarkerNames: Map<string, string> = new Map()
+  private pointMarkerVisible: Map<string, boolean> = new Map()
+  private highlightedPointId: string | null = null
 
   /** 每个真实多边形的可见状态（true = 可见，false = 隐藏）。 */
   private polygonVisible: Map<string, boolean> = new Map()
@@ -372,6 +380,152 @@ export class OverlayManager {
     this.rubberBands.delete(id)
   }
 
+  // ── Point Markers (persistent) ───────────────────────────────────────────
+
+  private ensurePointMarkerLayer() {
+    if (this.pointMarkerLayer) return
+    this.pointMarkerLayer = new this.TMap.MultiMarker({
+      id: 'tmap-hooker-point-markers',
+      map: this.map,
+      styles: {
+        default: new this.TMap.MarkerStyle({
+          width: 24,
+          height: 30,
+          anchor: { x: 12, y: 30 },
+          src: this._pinSvg('#FF6B35'),
+        }),
+        highlight: new this.TMap.MarkerStyle({
+          width: 24,
+          height: 30,
+          anchor: { x: 12, y: 30 },
+          src: this._pinSvg('#FF3500'),
+        }),
+        hidden: new this.TMap.MarkerStyle({
+          width: 1,
+          height: 1,
+          anchor: { x: 0, y: 0 },
+          src: this._pinSvg('rgba(0,0,0,0)'),
+        }),
+      },
+      geometries: [],
+    })
+  }
+
+  private ensurePointLabelLayer() {
+    if (this.pointLabelLayer) return
+    this.pointLabelLayer = new this.TMap.MultiLabel({
+      id: 'tmap-hooker-point-labels',
+      map: this.map,
+      styles: {
+        default: new this.TMap.LabelStyle({
+          color: '#FF6B35',
+          size: 12,
+          angle: 0,
+          background: true,
+          backgroundColor: 'rgba(20, 20, 40, 0.85)',
+          borderRadius: 4,
+          offset: { x: 0, y: 6 },
+        }),
+        highlight: new this.TMap.LabelStyle({
+          color: '#FF3500',
+          size: 12,
+          angle: 0,
+          background: true,
+          backgroundColor: 'rgba(20, 20, 40, 0.92)',
+          borderRadius: 4,
+          offset: { x: 0, y: 6 },
+        }),
+        hidden: new this.TMap.LabelStyle({
+          color: 'rgba(0,0,0,0)',
+          size: 1,
+          background: false,
+          offset: { x: 0, y: 0 },
+        }),
+      },
+      geometries: [],
+    })
+  }
+
+  addPointMarker(id: string, latlng: LatLng, name: string): void {
+    this.ensurePointMarkerLayer()
+    this.ensurePointLabelLayer()
+    const pos = new this.TMap.LatLng(latlng.lat, latlng.lng)
+    const styleId = this.highlightedPointId === id ? 'highlight' : 'default'
+
+    const markerGeo = { id, styleId, position: pos }
+    if (this.pointMarkers.has(id)) {
+      this.pointMarkerLayer.updateGeometries([markerGeo])
+      this.pointLabelLayer.updateGeometries([{ id, styleId, position: pos, content: name }])
+    } else {
+      this.pointMarkerLayer.add([markerGeo])
+      this.pointLabelLayer.add([{ id, styleId, position: pos, content: name }])
+    }
+    this.pointMarkers.set(id, latlng)
+    this.pointMarkerNames.set(id, name)
+    this.pointMarkerVisible.set(id, true)
+  }
+
+  removePointMarker(id: string): void {
+    if (!this.pointMarkerLayer || !this.pointMarkers.has(id)) return
+    this.pointMarkerLayer.remove([id])
+    this.pointLabelLayer?.remove([id])
+    this.pointMarkers.delete(id)
+    this.pointMarkerNames.delete(id)
+    this.pointMarkerVisible.delete(id)
+    if (this.highlightedPointId === id) this.highlightedPointId = null
+  }
+
+  updatePointMarkerName(id: string, name: string): void {
+    if (!this.pointLabelLayer || !this.pointMarkers.has(id)) return
+    this.pointMarkerNames.set(id, name)
+    const latlng = this.pointMarkers.get(id)!
+    const pos = new this.TMap.LatLng(latlng.lat, latlng.lng)
+    const styleId = !this.pointMarkerVisible.get(id)
+      ? 'hidden'
+      : this.highlightedPointId === id ? 'highlight' : 'default'
+    this.pointLabelLayer.updateGeometries([{ id, styleId, position: pos, content: name }])
+  }
+
+  setPointMarkerHighlight(id: string | null): void {
+    if (!this.pointMarkerLayer) return
+    const prev = this.highlightedPointId
+    this.highlightedPointId = id
+    const markerUpdates: any[] = []
+    const labelUpdates: any[] = []
+
+    if (prev !== null && prev !== id && this.pointMarkers.has(prev)) {
+      const latlng = this.pointMarkers.get(prev)!
+      const pos = new this.TMap.LatLng(latlng.lat, latlng.lng)
+      const visible = this.pointMarkerVisible.get(prev) !== false
+      const styleId = visible ? 'default' : 'hidden'
+      markerUpdates.push({ id: prev, styleId, position: pos })
+      labelUpdates.push({ id: prev, styleId, position: pos, content: this.pointMarkerNames.get(prev) ?? '' })
+    }
+    if (id !== null && this.pointMarkers.has(id)) {
+      const latlng = this.pointMarkers.get(id)!
+      const pos = new this.TMap.LatLng(latlng.lat, latlng.lng)
+      const visible = this.pointMarkerVisible.get(id) !== false
+      const styleId = visible ? 'highlight' : 'hidden'
+      markerUpdates.push({ id, styleId, position: pos })
+      labelUpdates.push({ id, styleId, position: pos, content: this.pointMarkerNames.get(id) ?? '' })
+    }
+    if (markerUpdates.length > 0) this.pointMarkerLayer.updateGeometries(markerUpdates)
+    if (labelUpdates.length > 0) this.pointLabelLayer?.updateGeometries(labelUpdates)
+  }
+
+  setPointMarkerVisible(id: string, visible: boolean): void {
+    if (!this.pointMarkerLayer || !this.pointMarkers.has(id)) return
+    this.pointMarkerVisible.set(id, visible)
+    const latlng = this.pointMarkers.get(id)!
+    const pos = new this.TMap.LatLng(latlng.lat, latlng.lng)
+    const styleId = !visible ? 'hidden' : (this.highlightedPointId === id ? 'highlight' : 'default')
+    this.pointMarkerLayer.updateGeometries([{ id, styleId, position: pos }])
+    if (this.pointLabelLayer) {
+      const name = this.pointMarkerNames.get(id) ?? ''
+      this.pointLabelLayer.updateGeometries([{ id, styleId, position: pos, content: name }])
+    }
+  }
+
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   /** 销毁测量图层（标记、折线、标签）并清空对应 track Map。clearAll 和 clearMeasurement 的共同实现。 */
@@ -409,6 +563,18 @@ export class OverlayManager {
       this.highlightedId = null
       this.onPolygonClick = null
     }
+    if (this.pointMarkerLayer) {
+      this.pointMarkerLayer.setMap(null)
+      this.pointMarkerLayer = null
+      this.pointMarkers.clear()
+      this.pointMarkerNames.clear()
+      this.pointMarkerVisible.clear()
+      this.highlightedPointId = null
+    }
+    if (this.pointLabelLayer) {
+      this.pointLabelLayer.setMap(null)
+      this.pointLabelLayer = null
+    }
   }
 
   /**
@@ -425,6 +591,14 @@ export class OverlayManager {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22">
       <circle cx="11" cy="11" r="9" fill="#FF6B35" stroke="#fff" stroke-width="2"/>
       <text x="11" y="15" text-anchor="middle" fill="#fff" font-size="10" font-family="sans-serif" font-weight="bold">${label}</text>
+    </svg>`
+    return `data:image/svg+xml;base64,${btoa(svg)}`
+  }
+
+  private _pinSvg(color: string): string {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="30" viewBox="0 0 24 30">
+      <path d="M12 0C6.48 0 2 4.48 2 10c0 7 10 20 10 20S22 17 22 10c0-5.52-4.48-10-10-10z" fill="${color}" stroke="#fff" stroke-width="1.5"/>
+      <circle cx="12" cy="10" r="4" fill="#fff" opacity="0.9"/>
     </svg>`
     return `data:image/svg+xml;base64,${btoa(svg)}`
   }

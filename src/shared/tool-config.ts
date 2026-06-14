@@ -24,10 +24,17 @@ export const TOOL_CONFIGS: ToolConfig[] = [
     icon: '⬡',
     description: '在地图上点击选点绘制多边形',
   },
+  {
+    id: 'point-marker',
+    name: '打点标记',
+    icon: '📍',
+    description: '在地图上点击标记位置点',
+  },
 ]
 
 export const TOOL_IDS = {
   TWO_POINT: 'two-point',
   MULTI_POINT: 'multi-point',
   POLYGON: 'polygon',
+  POINT_MARKER: 'point-marker',
 } as const

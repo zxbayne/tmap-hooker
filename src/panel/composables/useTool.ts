@@ -20,6 +20,16 @@ export interface PolygonLayer {
   coords: Array<{ lat: number; lng: number }>
 }
 
+/** 打点标记条目，Panel 层维护名称、可见性、选中状态和坐标。 */
+export interface PointMarkerItem {
+  id: string
+  name: string
+  visible: boolean
+  selected: boolean
+  lat: number
+  lng: number
+}
+
 export function useTool() {
   const { onHookEvent, sendCmd } = useMapBridge()
 
@@ -38,6 +48,10 @@ export function useTool() {
   const polygonLayers = ref<PolygonLayer[]>([])
   const editingPolygonId = ref<string | null>(null)
   let polygonNameCounter = 0
+
+  // 打点标记工具相关状态
+  const pointMarkers = ref<PointMarkerItem[]>([])
+  let pointNameCounter = 0
 
   const totalLabel = computed(() => (totalM.value > 0 ? formatDistance(totalM.value) : ''))
   const isMeasuring = computed(() => activeTool.value !== '')
@@ -136,6 +150,24 @@ export function useTool() {
       case HookEvent.POLYGON_EDIT_CANCELLED:
         editingPolygonId.value = null
         break
+
+      case HookEvent.POINT_MARKER_ADDED:
+        pointMarkers.value.push({
+          id: msg.payload.id,
+          name: msg.payload.name,
+          visible: true,
+          selected: false,
+          lat: msg.payload.lat,
+          lng: msg.payload.lng,
+        })
+        pointNameCounter++
+        break
+
+      case HookEvent.POINT_MARKER_DELETED: {
+        const idx = pointMarkers.value.findIndex((p) => p.id === msg.payload.id)
+        if (idx !== -1) pointMarkers.value.splice(idx, 1)
+        break
+      }
     }
   })
 
@@ -174,6 +206,8 @@ export function useTool() {
     drawingCoordsText.value = ''
     polygonLayers.value = []
     polygonNameCounter = 0
+    pointMarkers.value = []
+    pointNameCounter = 0
     sendCmd({ type: PanelCmd.CLEAR })
   }
 
@@ -238,6 +272,43 @@ export function useTool() {
     sendCmd({ type: PanelCmd.CANCEL_EDIT_POLYGON })
   }
 
+  // ── Point marker commands ──────────────────────────────────────────────────
+
+  function deletePointMarker(id: string) {
+    sendCmd({ type: PanelCmd.DELETE_POINT_MARKER, payload: { id } })
+  }
+
+  function selectPointMarkerFromPanel(id: string, multiSelect = false) {
+    if (multiSelect) {
+      // Toggle this item while keeping others
+      const marker = pointMarkers.value.find((p) => p.id === id)
+      if (marker) marker.selected = !marker.selected
+    } else {
+      // Single select: clear all, then select only this one
+      pointMarkers.value.forEach((p) => { p.selected = false })
+      const marker = pointMarkers.value.find((p) => p.id === id)
+      if (marker) marker.selected = true
+      sendCmd({ type: PanelCmd.SELECT_POINT_MARKER, payload: { id } })
+    }
+  }
+
+  function togglePointMarkerVisible(id: string) {
+    const marker = pointMarkers.value.find((p) => p.id === id)
+    if (!marker) return
+    marker.visible = !marker.visible
+    sendCmd({ type: PanelCmd.TOGGLE_POINT_MARKER_VISIBLE, payload: { id, visible: marker.visible } })
+  }
+
+  function renamePointMarker(id: string, name: string) {
+    const marker = pointMarkers.value.find((p) => p.id === id)
+    if (marker) marker.name = name
+    sendCmd({ type: PanelCmd.RENAME_POINT_MARKER, payload: { id, name } })
+  }
+
+  function importPointMarkers(input: string) {
+    sendCmd({ type: PanelCmd.IMPORT_POINT_MARKERS, payload: { input } })
+  }
+
   function setDebug(enabled: boolean) {
     sendCmd({ type: PanelCmd.SET_DEBUG, payload: { enabled } })
   }
@@ -255,6 +326,8 @@ export function useTool() {
     drawingCoordsText,
     polygonLayers,
     editingPolygonId,
+    // point marker
+    pointMarkers,
     // commands
     setTool,
     finish,
@@ -272,6 +345,11 @@ export function useTool() {
     startEditPolygon,
     finishEditPolygon,
     cancelEditPolygon,
+    deletePointMarker,
+    selectPointMarkerFromPanel,
+    togglePointMarkerVisible,
+    renamePointMarker,
+    importPointMarkers,
     setDebug,
   }
 }
