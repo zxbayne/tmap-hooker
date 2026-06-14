@@ -33,9 +33,19 @@ The hook runs in MAIN world so it can access `window.TMap`.
 
 **TMap detection** (`map-bridge.ts`): Uses dual strategy — an `Object.defineProperty` setter trap on `window.TMap` (catches late loads) and a 200ms polling interval up to 50 attempts (catches early loads). Both paths call `tryPrototypePatch`, which wraps methods on `TMap.Map.prototype` to intercept the first map method call and capture the instance. An `__tmapHookerPatched` flag makes this idempotent.
 
-**Tool plugin system** (`tools/`): Each tool implements `ITool` (`activate / deactivate / reset`). `ToolManager` holds the registry and active tool, injects a `ToolContext` (map instance + `OverlayManager` + emit function) on activation. To add a new tool: implement `ITool`, register it in `ToolManager`'s constructor, add metadata to `src/shared/tool-config.ts`.
+**Tool plugin system** (`tools/`): Each tool implements `ITool` (`activate / deactivate / reset`). `ToolManager` holds the registry and active tool, injects a `ToolContext` (map instance + `OverlayManager`) on activation. To add a new tool: implement `ITool`, register it in `ToolManager`'s constructor, add metadata to `src/shared/tool-config.ts`, route new `PanelCmd`s in `src/hook/index.ts`.
 
-**Overlay management** (`overlay-manager.ts`): Lazy-initializes TMap Multi* layers (MultiMarker, MultiPolyline, MultiLabel, MultiPolygon). Key distinction: `clearMeasurement()` removes only markers/lines/labels; `clearAll()` also removes polygons. Polygons are persistent user data and survive tool switches — `setTool()` calls `clearMeasurement()`, not `clearAll()`.
+**Overlay management** (`overlay-manager.ts`): Lazy-initializes TMap Multi* layers. Two categories with different lifetimes:
+
+| Layer | Fields | Cleared by |
+|-------|--------|-----------|
+| Measurement markers, polylines, labels | `markerLayer`, `polylineLayer`, `labelLayer` | `clearMeasurement()` and `clearAll()` |
+| Polygons, rubber band | `polygonLayer`, `rubberBandLayer` | `clearAll()` only |
+| Point marker pins + name labels | `pointMarkerLayer`, `pointLabelLayer` | `clearAll()` only |
+
+Point marker layers cache names (`pointMarkerNames`) so that highlight/visibility updates don't accidentally blank the label text. `setTool()` skips `clearMeasurement()` for both `polygon` and `point-marker` tools (defined via `PERSISTENT_TOOLS` set).
+
+**Panel-triggered map panning**: `PolygonTool.selectById(id, panToLocation)` and `PointMarkerTool.selectById(id, panToLocation)` accept an optional second argument. When `true` (passed only by `ToolManager` in response to panel `SELECT_*` commands), the tool calls `map.panTo(center)` (falling back to `setCenter`) before emitting the selection event. Direct map-click selection paths pass no second arg, so they never auto-pan.
 
 **Debug logging** (`logger.ts`): All hook-layer console output goes through `log()`, which gates on `debugEnabled`. Initial state is read from `localStorage.__tmh_settings__` at startup; toggled at runtime via `SET_DEBUG` panel command.
 
@@ -45,9 +55,23 @@ The panel mounts a Vue 3 app inside a **Shadow DOM** (`host.attachShadow({ mode:
 
 **`vite.config.panel.ts` requires `define: { 'process.env.NODE_ENV': JSON.stringify('production') }`** — without this, Vue references `process.env.NODE_ENV` at runtime and throws `ReferenceError: process is not defined` in the IIFE context.
 
-**State management** (`composables/useTool.ts`): Central reactive store for all tool state. Subscribes to all `HookEvent`s via `useMapBridge` and exposes command functions (`setTool`, `finish`, `undo`, `clear`, `drawPolygon`, `deletePolygon`, `setDebug`).
+**State management** (`composables/useTool.ts`): Central reactive store for all tool state. Subscribes to all `HookEvent`s via `useMapBridge` and exposes command functions. Key exported types:
+- `PolygonLayer` — id, name, visible, selected, coords (vertices for export)
+- `PointMarkerItem` — id, name, visible, selected, lat, lng
+
+Point marker selection supports multi-select: `selectPointMarkerFromPanel(id, multiSelect)`. When `multiSelect=true` (Shift held in `PointPanel.vue`), toggles the clicked item without clearing others and skips the hook `SELECT_POINT_MARKER` command. When `false`, deselects all others and sends the command (triggering map highlight + pan).
 
 **Message bridge** (`composables/useMapBridge.ts`): Module-level singleton handlers array with a single `window.addEventListener`. Per-component registration would create duplicate listeners if Vue remounts. Sends `PANEL_READY` on mount so the hook can replay `MAP_READY` if it fired before the panel loaded.
+
+## Coordinate Utilities (`src/shared/utils/parse-coords.ts`)
+
+| Function | Min points | Formats |
+|----------|-----------|---------|
+| `parseCoords(input)` | 3 | `[[lng,lat],...]` · `lng,lat;lng,lat;...` |
+| `parsePointCoords(input)` | 1 | `[lng,lat]` (1D) · `[[lng,lat],...]` (2D) · `lng,lat;...` |
+| `coordsToText(points)` | — | serializes to `[[lng,lat],...]` |
+
+`parsePointCoords` distinguishes 1D vs 2D by prefix: `[[` → multi-point array, `[` → single point, `;` present → semicolon format.
 
 ## Build System Notes
 
