@@ -509,6 +509,13 @@ export class PolygonTool implements ITool {
       this._syncEditCoords(result)
     })
 
+    // 自动选中该多边形，无需用户在地图上手动点击
+    try {
+      this.editor.select([id])
+    } catch (e) {
+      log('startEditById: auto-select failed:', e)
+    }
+
     this._unregisterIdleClick()
     sendToPanel({ type: HookEvent.POLYGON_EDIT_STARTED, payload: { id } })
     log('startEditById:', id)
