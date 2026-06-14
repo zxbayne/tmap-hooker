@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "TMap工具",
   "version": "1.1.0",
-  "description": "腾讯地图测距辅助工具",
+  "description": "The missing part of TMap.",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
