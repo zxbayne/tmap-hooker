@@ -35,6 +35,8 @@ export class OverlayManager {
 
   /** 多边形点击时的回调，注册在图层级别（非单个几何体），通过 evt.geometry.id 区分。 */
   private onPolygonClick: ((id: string) => void) | null = null
+  /** 多边形 mousedown 回调，用于实现拖动。 */
+  private onPolygonMousedown: ((id: string, latLng: any) => void) | null = null
 
   constructor(map: any, TMap: any) {
     this.map = map
@@ -137,13 +139,13 @@ export class OverlayManager {
       map: this.map,
       styles: {
         // E-W 线段 → 标签在正上方
-        'label-up':        new this.TMap.LabelStyle({ ...base, offset: { x: 0,   y: -20 } }),
+        'label-up':        new this.TMap.LabelStyle({ ...base, offset: { x: 0,   y: -28 } }),
         // N-S 线段 → 标签在正右方
-        'label-right':     new this.TMap.LabelStyle({ ...base, offset: { x: 22,  y:   0 } }),
+        'label-right':     new this.TMap.LabelStyle({ ...base, offset: { x: 30,  y:   0 } }),
         // NE-SW 线段 → 标签在左上方（垂直于线段）
-        'label-up-left':   new this.TMap.LabelStyle({ ...base, offset: { x: -14, y: -14 } }),
+        'label-up-left':   new this.TMap.LabelStyle({ ...base, offset: { x: -20, y: -20 } }),
         // NW-SE 线段 → 标签在右上方（垂直于线段）
-        'label-up-right':  new this.TMap.LabelStyle({ ...base, offset: { x: 14,  y: -14 } }),
+        'label-up-right':  new this.TMap.LabelStyle({ ...base, offset: { x: 20,  y: -20 } }),
       },
       geometries: [],
     })
@@ -173,8 +175,26 @@ export class OverlayManager {
 
   // ── Polygons ──────────────────────────────────────────────────────────────
 
-  private ensurePolygonLayer(onClickCb: (id: string) => void) {
-    if (this.polygonLayer) return
+  private ensurePolygonLayer(onClickCb: (id: string) => void, onMousedownCb?: (id: string, latLng: any) => void) {
+    if (this.polygonLayer) {
+      // 层已存在但 mousedown 尚未注册（首次由 setPreviewPolygon 创建时无回调），补充注册
+      if (onMousedownCb && !this.onPolygonMousedown) {
+        console.log('[TMH:overlay] late-registering mousedown on existing polygon layer')
+        this.onPolygonMousedown = onMousedownCb
+        this.polygonLayer.on('mousedown', (evt: any) => {
+          const id: string = evt.geometry?.id
+          console.log('[TMH:overlay] polygon mousedown fired, geometry id:', id, 'latLng:', evt.latLng, 'originalEvent:', evt.originalEvent)
+          if (id) {
+            console.log('[TMH:overlay] calling stopPropagation and mousedown cb for id:', id)
+            evt.originalEvent?.stopPropagation()
+            this.onPolygonMousedown?.(id, evt.latLng)
+          } else {
+            console.log('[TMH:overlay] mousedown ignored — no geometry id')
+          }
+        })
+      }
+      return
+    }
     this.polygonLayer = new this.TMap.MultiPolygon({
       id: 'tmap-hooker-polygons',
       map: this.map,
@@ -213,14 +233,30 @@ export class OverlayManager {
       const id: string = evt.geometry?.id
       if (id) this.onPolygonClick?.(id)
     })
+    if (onMousedownCb) {
+      this.onPolygonMousedown = onMousedownCb
+      this.polygonLayer.on('mousedown', (evt: any) => {
+        const id: string = evt.geometry?.id
+        console.log('[TMH:overlay] polygon mousedown fired, geometry id:', id, 'latLng:', evt.latLng, 'originalEvent:', evt.originalEvent)
+        if (id) {
+          console.log('[TMH:overlay] calling stopPropagation and mousedown cb for id:', id)
+          evt.originalEvent?.stopPropagation()
+          this.onPolygonMousedown?.(id, evt.latLng)
+        } else {
+          console.log('[TMH:overlay] mousedown ignored — no geometry id')
+        }
+      })
+    } else {
+      console.log('[TMH:overlay] ensurePolygonLayer called WITHOUT mousedown callback')
+    }
   }
 
   /**
    * 在地图上添加或更新真实多边形（非预览）。
    * auto-close：自动追加第一个点到末尾以闭合路径。
    */
-  addPolygon(id: string, points: LatLng[], onClickCb: (id: string) => void): void {
-    this.ensurePolygonLayer(onClickCb)
+  addPolygon(id: string, points: LatLng[], onClickCb: (id: string) => void, onMousedownCb?: (id: string, latLng: any) => void): void {
+    this.ensurePolygonLayer(onClickCb, onMousedownCb)
 
     const closed = [...points]
     const first = closed[0]
@@ -249,13 +285,24 @@ export class OverlayManager {
     if (this.highlightedId === id) this.highlightedId = null
   }
 
+  /** 实时更新多边形路径，用于拖拽过程中的位置预览。不更新 polygons 缓存，由调用方在拖拽结束后调 addPolygon 提交。 */
+  updatePolygonPath(id: string, points: LatLng[]): void {
+    if (!this.polygonLayer) return
+    const closed = [...points]
+    const first = closed[0]
+    const last = closed[closed.length - 1]
+    if (first.lat !== last.lat || first.lng !== last.lng) closed.push(first)
+    const path = closed.map((p) => new this.TMap.LatLng(p.lat, p.lng))
+    this.polygonLayer.updateGeometries([{ id, styleId: 'highlight', paths: [path] }])
+  }
+
   /**
    * 添加或更新绘制中的预览多边形（使用 preview 样式，不参与高亮/可见性管理）。
    * 预览多边形不写入 polygons / polygonVisible，因此 setPolygonHighlight 会自动跳过它。
    */
-  setPreviewPolygon(id: string, points: LatLng[], onClickCb: (id: string) => void): void {
+  setPreviewPolygon(id: string, points: LatLng[], onClickCb: (id: string) => void, onMousedownCb?: (id: string, latLng: any) => void): void {
     if (points.length < 3) return
-    this.ensurePolygonLayer(onClickCb)
+    this.ensurePolygonLayer(onClickCb, onMousedownCb)
 
     const closed = [...points]
     const first = closed[0]

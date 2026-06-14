@@ -9,14 +9,12 @@
   position: fixed;
   z-index: 2147483647;
   right: 0;
-  top: 50%;
-  transform: translateY(-50%);
   background: #1a1a2e;
   border: 1px solid #2d2d5e;
   border-right: none;
   border-radius: 8px 0 0 8px;
   padding: 12px 8px;
-  cursor: pointer;
+  cursor: grab;
   color: #e8e8f0;
   display: flex;
   flex-direction: column;
@@ -26,6 +24,10 @@
   box-shadow: -4px 0 16px rgba(0, 0, 0, 0.4);
   transition: background 0.15s, box-shadow 0.15s;
   user-select: none;
+}
+
+.mini-tab:active {
+  cursor: grabbing;
 }
 
 .mini-tab:hover {

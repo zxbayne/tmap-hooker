@@ -164,13 +164,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import type { PolygonLayer } from '../../composables/useTool'
 
 const props = defineProps<{
   polygonMode: 'idle' | 'drawing'
   drawingPointCount: number
-  drawingCoordsText: string
   polygonLayers: PolygonLayer[]
 }>()
 
@@ -217,12 +216,6 @@ async function copyCoords() {
   }
 }
 
-// 当绘制中的坐标更新时，同步到坐标导入区（若展开）
-watch(() => props.drawingCoordsText, (val) => {
-  if (val && coordsExpanded.value) {
-    localCoords.value = val
-  }
-})
 
 function onSelectLayer(id: string) {
   if (editingId.value !== null) return

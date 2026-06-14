@@ -11,7 +11,7 @@ async function isWhitelisted(): Promise<boolean> {
   try {
     const result = await chrome.storage.local.get('whitelist')
     const wl: string[] = Array.isArray(result.whitelist) ? result.whitelist : DEFAULT_WHITELIST
-    return wl.length === 0 || wl.some((d) => location.hostname.includes(d))
+    return wl.some((d) => location.hostname.includes(d))
   } catch {
     return true
   }

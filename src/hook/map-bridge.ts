@@ -103,8 +103,21 @@ function tryPrototypePatch(TMap: any, toolManager: ToolManager): boolean {
 
   log('patching TMap.Map.prototype, methods to hook:', CAPTURE_METHODS)
 
-  const onCapture = (instance: any) => toolManager.onMapReady(instance, TMap)
+  let captured = false
+  const onCapture = (instance: any) => {
+    if (captured) return
+    captured = true
+    toolManager.onMapReady(instance, TMap)
+    // 捕获成功后把所有 wrapper 还原为原始方法，避免持续日志和无谓开销
+    for (const method of CAPTURE_METHODS) {
+      if (typeof originals[method] === 'function') {
+        proto[method] = originals[method]
+      }
+    }
+    log('map instance captured, wrappers removed')
+  }
 
+  const originals: Record<string, Function> = {}
   let hookedCount = 0
   for (const method of CAPTURE_METHODS) {
     if (typeof proto[method] !== 'function') {
@@ -112,6 +125,7 @@ function tryPrototypePatch(TMap: any, toolManager: ToolManager): boolean {
       continue
     }
     const orig = proto[method]
+    originals[method] = orig
     proto[method] = function (this: any, ...args: unknown[]) {
       log(`map.${method}() called — capturing instance`)
       onCapture(this)

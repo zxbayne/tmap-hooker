@@ -1,13 +1,13 @@
 <template>
   <div class="popup-root">
     <div class="popup-header">
-      <span class="popup-title">📍 TMap Hooker</span>
+      <span class="popup-title">📍 TMap工具</span>
     </div>
 
     <div class="popup-section">
       <div class="section-label">启用网站白名单</div>
       <div class="section-desc">
-        {{ whitelist.length === 0 ? '列表为空：将在所有网站启用' : '仅在以下网站启用插件' }}
+        {{ whitelist.length === 0 ? '列表为空：插件不在任何网站启用' : '仅在以下网站启用插件' }}
       </div>
 
       <div class="whitelist-items">
@@ -15,7 +15,7 @@
           <span class="domain-text">{{ domain }}</span>
           <button class="remove-btn" @click="removeDomain(idx)" title="删除">✕</button>
         </div>
-        <div v-if="whitelist.length === 0" class="whitelist-empty">暂无条目，插件全站生效</div>
+        <div v-if="whitelist.length === 0" class="whitelist-empty">暂无条目，插件已禁用</div>
       </div>
 
       <div class="add-row">
@@ -71,7 +71,7 @@ onMounted(async () => {
 })
 
 async function save() {
-  await chrome.storage.local.set({ whitelist: whitelist.value })
+  await chrome.storage.local.set({ whitelist: [...whitelist.value] })
   // storage.onChanged 通知所有存活 tab；ensureContentScripts 处理当前未注入的 tab
   const ok = await ensureContentScripts()
   saveHint.value = ok ? '已保存并立即生效' : '已保存'

@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "TMap Hooker",
+  "name": "TMap工具",
   "version": "1.0.0",
   "description": "腾讯地图测距辅助工具",
   "icons": {

@@ -20,6 +20,20 @@ export class PolygonTool implements ITool {
   private dblClickHandler: ((evt: any) => void) | null = null
   private keydownHandler: ((evt: KeyboardEvent) => void) | null = null
 
+  // 拖动相关
+  private isDragging = false
+  private dragStartLatLng: { lat: number; lng: number } | null = null
+  private dragOriginalCoords: LatLng[] | null = null
+  private draggingId: string | null = null
+  private lastDragLatLng: { lat: number; lng: number } | null = null
+  private _justFinishedDrag = false
+  private dragMoveHandler: ((evt: any) => void) | null = null
+  private dragUpHandler: (() => void) | null = null
+
+  // idle 模式地图点击（取消选中）
+  private idleMapClickHandler: ((evt: any) => void) | null = null
+  private _polygonClickFired = false
+
   private readonly RUBBER_BAND_ID = 'poly-rubber-band'
   private readonly PREVIEW_POLY_ID = 'poly-preview'
 
@@ -28,6 +42,7 @@ export class PolygonTool implements ITool {
   activate(ctx: ToolContext): void {
     this.ctx = ctx
     this.mode = 'idle'
+    this._registerIdleClick()
     log('PolygonTool activated (idle mode)')
   }
 
@@ -35,6 +50,8 @@ export class PolygonTool implements ITool {
     if (this.mode === 'drawing') {
       this._cleanupDrawingState()
     }
+    this._unregisterIdleClick()
+    this._cleanupDrag()
     this.ctx = null
     log('PolygonTool deactivated')
   }
@@ -65,6 +82,7 @@ export class PolygonTool implements ITool {
   enterDrawingMode(): void {
     if (!this.ctx) return
     this._cleanupDrawingState()
+    this._unregisterIdleClick()
     this.mode = 'drawing'
     this.drawingPoints = []
     this.selectedId = null
@@ -92,7 +110,10 @@ export class PolygonTool implements ITool {
     const id = `poly-${++this.idCounter}`
     const count = this.drawingPoints.length
     const coords = [...this.drawingPoints]
-    this.ctx.overlays.addPolygon(id, coords, (clickedId) => this._onPolygonClick(clickedId))
+    this.ctx.overlays.addPolygon(id, coords,
+      (clickedId) => this._onPolygonClick(clickedId),
+      (clickedId, latLng) => this._onPolygonMousedown(clickedId, latLng),
+    )
     this.polygonIds.add(id)
     this.polygonCoords.set(id, coords)
     sendToPanel({ type: HookEvent.POLYGON_DRAWN, payload: { id, count } })
@@ -109,6 +130,7 @@ export class PolygonTool implements ITool {
   /** 进入 idle（选择）模式：注销绘制事件，清理临时覆盖物。 */
   private enterIdleMode(): void {
     this._cleanupDrawingState()
+    this._registerIdleClick()
     sendToPanel({ type: HookEvent.POLYGON_MODE_CHANGED, payload: { mode: 'idle', drawingPointCount: 0 } })
     log('PolygonTool enterIdleMode')
   }
@@ -160,7 +182,10 @@ export class PolygonTool implements ITool {
       return
     }
     const id = `poly-${++this.idCounter}`
-    this.ctx.overlays.addPolygon(id, points, (clickedId) => this._onPolygonClick(clickedId))
+    this.ctx.overlays.addPolygon(id, points,
+      (clickedId) => this._onPolygonClick(clickedId),
+      (clickedId, latLng) => this._onPolygonMousedown(clickedId, latLng),
+    )
     this.polygonIds.add(id)
     this.polygonCoords.set(id, points)
     sendToPanel({ type: HookEvent.POLYGON_DRAWN, payload: { id, count: points.length } })
@@ -272,8 +297,10 @@ export class PolygonTool implements ITool {
 
   /** 点击已有多边形时的回调（图层级注册，通过 evt.geometry.id 路由）。 */
   private _onPolygonClick(id: string): void {
+    this._polygonClickFired = true
     if (id === this.PREVIEW_POLY_ID) return
     if (this.mode === 'drawing') return
+    if (this._justFinishedDrag) return
     if (this.selectedId === id) return
     this.selectedId = id
     this.ctx?.overlays.setPolygonHighlight(id)
@@ -281,6 +308,119 @@ export class PolygonTool implements ITool {
     sendToPanel({ type: HookEvent.POLYGON_SELECTED, payload: { id, coords } })
     log('polygon selected:', id)
   }
+
+  // ── Idle-click deselect ───────────────────────────────────────────────────
+
+  private _registerIdleClick(): void {
+    if (this.idleMapClickHandler || !this.ctx) return
+    this.idleMapClickHandler = (_evt: any) => {
+      if (this._polygonClickFired) {
+        this._polygonClickFired = false
+        return
+      }
+      if (this.selectedId !== null) {
+        this.selectedId = null
+        this.ctx?.overlays.setPolygonHighlight(null)
+        sendToPanel({ type: HookEvent.POLYGON_SELECTED, payload: { id: '', coords: [] } })
+        log('polygon deselected (map click)')
+      }
+    }
+    this.ctx.map.on('click', this.idleMapClickHandler)
+  }
+
+  private _unregisterIdleClick(): void {
+    if (!this.idleMapClickHandler || !this.ctx) return
+    this.ctx.map.off('click', this.idleMapClickHandler)
+    this.idleMapClickHandler = null
+  }
+
+  // ── Polygon drag ──────────────────────────────────────────────────────────
+
+  private _onPolygonMousedown(id: string, latLng: any): void {
+    console.log('[TMH:drag] _onPolygonMousedown called — id:', id, 'mode:', this.mode, 'selectedId:', this.selectedId, 'latLng:', latLng)
+    if (this.mode !== 'idle') { console.log('[TMH:drag] BLOCKED — not idle'); return }
+    if (id === this.PREVIEW_POLY_ID) { console.log('[TMH:drag] BLOCKED — preview polygon'); return }
+    if (!this.ctx) { console.log('[TMH:drag] BLOCKED — no ctx'); return }
+    if (id !== this.selectedId) { console.log('[TMH:drag] BLOCKED — id', id, '!== selectedId', this.selectedId); return }
+    const originalCoords = this.polygonCoords.get(id)
+    if (!originalCoords) { console.log('[TMH:drag] BLOCKED — no coords for id', id); return }
+
+    this.isDragging = true
+    this.draggingId = id
+    this.dragStartLatLng = { lat: latLng.lat, lng: latLng.lng }
+    this.dragOriginalCoords = [...originalCoords]
+    this.lastDragLatLng = { lat: latLng.lat, lng: latLng.lng }
+
+    try {
+      this.ctx.map.setDraggable(false)
+      console.log('[TMH:drag] map.setDraggable(false) called')
+    } catch (e) {
+      console.log('[TMH:drag] map.setDraggable(false) threw:', e)
+    }
+
+    this.dragMoveHandler = (evt: any) => this._onDragMove(evt)
+    this.dragUpHandler = () => this._onDragUp()
+    this.ctx.map.on('mousemove', this.dragMoveHandler)
+    document.addEventListener('mouseup', this.dragUpHandler)
+    console.log('[TMH:drag] drag started — registered mousemove on map + mouseup on document')
+  }
+
+  private _onDragMove(evt: any): void {
+    if (!this.isDragging || !this.dragStartLatLng || !this.dragOriginalCoords || !this.draggingId || !this.ctx) return
+    const dLat = evt.latLng.lat - this.dragStartLatLng.lat
+    const dLng = evt.latLng.lng - this.dragStartLatLng.lng
+    this.lastDragLatLng = { lat: evt.latLng.lat, lng: evt.latLng.lng }
+    const newCoords = this.dragOriginalCoords.map((p) => ({ lat: p.lat + dLat, lng: p.lng + dLng }))
+    console.log('[TMH:drag] move — dLat:', dLat.toFixed(6), 'dLng:', dLng.toFixed(6))
+    this.ctx.overlays.updatePolygonPath(this.draggingId, newCoords)
+  }
+
+  private _onDragUp(): void {
+    console.log('[TMH:drag] _onDragUp called — isDragging:', this.isDragging, 'lastLatLng:', this.lastDragLatLng)
+    if (!this.isDragging || !this.dragStartLatLng || !this.dragOriginalCoords || !this.draggingId || !this.ctx) {
+      console.log('[TMH:drag] _onDragUp SKIPPED — missing state')
+      return
+    }
+    const last = this.lastDragLatLng ?? this.dragStartLatLng
+    const dLat = last.lat - this.dragStartLatLng.lat
+    const dLng = last.lng - this.dragStartLatLng.lng
+    const finalCoords = this.dragOriginalCoords.map((p) => ({ lat: p.lat + dLat, lng: p.lng + dLng }))
+    const id = this.draggingId
+
+    this.polygonCoords.set(id, finalCoords)
+    this.ctx.overlays.addPolygon(id, finalCoords,
+      (clickedId) => this._onPolygonClick(clickedId),
+      (clickedId, latLng) => this._onPolygonMousedown(clickedId, latLng),
+    )
+    this.ctx.overlays.setPolygonHighlight(id)
+    sendToPanel({ type: HookEvent.POLYGON_SELECTED, payload: { id, coords: finalCoords } })
+
+    this._cleanupDrag()
+
+    try { this.ctx.map.setDraggable(true) } catch { /* 忽略 */ }
+
+    this._justFinishedDrag = true
+    setTimeout(() => { this._justFinishedDrag = false }, 100)
+    log('polygon drag end:', id)
+  }
+
+  private _cleanupDrag(): void {
+    if (this.ctx && this.dragMoveHandler) {
+      this.ctx.map.off('mousemove', this.dragMoveHandler)
+      this.dragMoveHandler = null
+    }
+    if (this.dragUpHandler) {
+      document.removeEventListener('mouseup', this.dragUpHandler)
+      this.dragUpHandler = null
+    }
+    this.isDragging = false
+    this.draggingId = null
+    this.dragStartLatLng = null
+    this.dragOriginalCoords = null
+    this.lastDragLatLng = null
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
 
   private _popLastDrawingPoint(): void {
     if (this.drawingPoints.length === 0) return

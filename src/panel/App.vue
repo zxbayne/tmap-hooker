@@ -1,8 +1,15 @@
 <template>
-  <!-- 折叠状态：右边缘小标签，点击展开 -->
-  <div v-if="isCollapsed" class="mini-tab" @click="expand" title="展开 TMap 工具">
+  <!-- 折叠状态：右边缘小标签，可拖动调整垂直位置 -->
+  <div
+    v-if="isCollapsed"
+    class="mini-tab"
+    :style="{ top: miniTabY + 'px' }"
+    @mousedown.prevent="startMiniDrag"
+    @click.stop="onMiniTabClick"
+    title="展开 TMap 工具"
+  >
     <span>📍</span>
-    <span class="mini-tab-text">TMap</span>
+    <span class="mini-tab-text">TMap工具</span>
   </div>
 
   <!-- 展开状态：显示完整面板（始终贴靠右侧，仅垂直可拖动） -->
@@ -22,7 +29,7 @@
           ⚙️
         </button>
         <button class="icon-btn" @click.stop="collapse" title="收起">
-          ╌
+          ⟩
         </button>
       </div>
     </div>
@@ -46,7 +53,6 @@
       :point-count="pointCount"
       :polygon-mode="polygonMode"
       :drawing-point-count="drawingPointCount"
-      :drawing-coords-text="drawingCoordsText"
       :polygon-layers="polygonLayers"
       @start-drawing="startDrawingPolygon"
       @finish-drawing="finishDrawingPolygon"
@@ -109,6 +115,7 @@ const {
 
 // ── 折叠/展开状态 ─────────────────────────────────────────────────────────────
 const COLLAPSE_KEY = '__tmh_collapsed__'
+const MINI_Y_KEY = '__tmh_mini_y__'
 const isCollapsed = ref(localStorage.getItem(COLLAPSE_KEY) === 'true')
 
 function collapse() {
@@ -119,6 +126,27 @@ function collapse() {
 function expand() {
   isCollapsed.value = false
   localStorage.setItem(COLLAPSE_KEY, 'false')
+}
+
+// ── Mini-tab 拖动 ────────────────────────────────────────────────────────────
+const savedMiniY = localStorage.getItem(MINI_Y_KEY)
+const miniTabY = ref(savedMiniY !== null ? Number(savedMiniY) : Math.max(0, window.innerHeight / 2 - 40))
+let miniDragging = false
+let miniDragOffsetY = 0
+let miniHasMoved = false
+
+function startMiniDrag(e: MouseEvent) {
+  miniDragging = true
+  miniHasMoved = false
+  miniDragOffsetY = e.clientY - miniTabY.value
+}
+
+function onMiniTabClick() {
+  if (miniHasMoved) {
+    miniHasMoved = false
+    return
+  }
+  expand()
 }
 
 // ── 设置面板可见性 ─────────────────────────────────────────────────────────────
@@ -139,12 +167,19 @@ function startDrag(e: MouseEvent) {
 }
 
 function onMouseMove(e: MouseEvent) {
-  if (!dragging) return
-  posY.value = Math.max(0, Math.min(window.innerHeight - 100, e.clientY - dragOffsetY))
+  if (dragging) {
+    posY.value = Math.max(0, Math.min(window.innerHeight - 100, e.clientY - dragOffsetY))
+  }
+  if (miniDragging) {
+    miniHasMoved = true
+    miniTabY.value = Math.max(0, Math.min(window.innerHeight - 80, e.clientY - miniDragOffsetY))
+    localStorage.setItem(MINI_Y_KEY, String(miniTabY.value))
+  }
 }
 
 function onMouseUp() {
   dragging = false
+  miniDragging = false
 }
 
 function onResize() {

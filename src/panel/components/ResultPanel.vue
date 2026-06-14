@@ -15,7 +15,6 @@
       v-else-if="activeTool === TOOL_IDS.POLYGON"
       :polygon-mode="polygonMode"
       :drawing-point-count="drawingPointCount"
-      :drawing-coords-text="drawingCoordsText"
       :polygon-layers="polygonLayers"
       @start-drawing="emit('startDrawing')"
       @finish-drawing="emit('finishDrawing')"
@@ -48,7 +47,6 @@ const props = defineProps<{
   // polygon
   polygonMode: 'idle' | 'drawing'
   drawingPointCount: number
-  drawingCoordsText: string
   polygonLayers: PolygonLayer[]
 }>()
 
