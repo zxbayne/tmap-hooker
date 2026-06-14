@@ -164,7 +164,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, nextTick } from 'vue'
 import type { PolygonLayer } from '../../composables/useTool'
 
 const props = defineProps<{
@@ -243,13 +243,4 @@ function onDrawFromText() {
   localCoords.value = ''
 }
 
-// 在 Panel 层也监听 Escape，作为 hook 层 keydown 的备用
-function onKeydown(evt: KeyboardEvent) {
-  if (evt.key === 'Escape' && props.polygonMode === 'drawing') {
-    emit('cancelDrawing')
-  }
-}
-
-onMounted(() => document.addEventListener('keydown', onKeydown))
-onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 </script>

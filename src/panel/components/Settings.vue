@@ -10,8 +10,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-
-const SETTINGS_KEY = '__tmh_settings__'
+import { SETTINGS_KEY } from '@shared/constants'
 
 /** 从 localStorage 读取扩展设置，解析失败时返回默认值。 */
 function loadSettings() {

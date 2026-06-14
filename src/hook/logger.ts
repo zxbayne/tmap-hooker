@@ -1,3 +1,5 @@
+import { SETTINGS_KEY } from '@shared/constants'
+
 let debugEnabled = false
 
 /**
@@ -6,7 +8,7 @@ let debugEnabled = false
  */
 export function initLogger(): void {
   try {
-    const raw = localStorage.getItem('__tmh_settings__')
+    const raw = localStorage.getItem(SETTINGS_KEY)
     debugEnabled = raw ? JSON.parse(raw).debug === true : false
   } catch {
     debugEnabled = false

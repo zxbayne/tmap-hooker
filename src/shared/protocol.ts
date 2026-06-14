@@ -6,6 +6,9 @@
  * 使用 const enum + 字符串字面量值，而非数字枚举，
  * 原因：字符串值在浏览器 DevTools 的 message 面板中直接可读，方便调试。
  */
+import type { LatLng } from './utils/parse-coords'
+export type { LatLng }
+
 export const HOOK_SOURCE = 'tmap-hook'
 export const PANEL_SOURCE = 'tmap-panel'
 
@@ -44,11 +47,6 @@ export const enum PanelCmd {
   TOGGLE_POLYGON_VISIBLE = 'TOGGLE_POLYGON_VISIBLE',
 }
 
-export interface LatLngData {
-  lat: number
-  lng: number
-}
-
 // ── Hook → Panel payload 类型 ────────────────────────────────────────────────
 
 /** 用户在地图上点击了新点时发送。 */
@@ -69,8 +67,8 @@ export interface SegmentAddedPayload {
 /** 两点测距完成后发送，包含最终距离和两点坐标。 */
 export interface MeasurementResultPayload {
   distanceM: number
-  pointA: LatLngData
-  pointB: LatLngData
+  pointA: LatLng
+  pointB: LatLng
 }
 
 /** 多点测距撤销最后一点后发送。 */
@@ -101,7 +99,7 @@ export interface PolygonDrawnPayload {
 /** 用户点击地图上某个多边形时发送，附带顶点坐标供面板坐标导出功能使用。 */
 export interface PolygonSelectedPayload {
   id: string | null
-  coords: Array<{ lat: number; lng: number }>
+  coords: LatLng[]
 }
 
 /** 多边形被删除后发送。 */

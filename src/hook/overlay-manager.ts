@@ -1,4 +1,4 @@
-import type { LatLng } from './tools/types'
+import type { LatLng } from '@shared/utils/parse-coords'
 
 /**
  * 管理地图上所有覆盖物图层（标记、折线、标签、多边形、橡皮筋线）。
@@ -62,6 +62,16 @@ export class OverlayManager {
     })
   }
 
+  /** 统一的 add-or-update 操作：track 有记录则 update，否则 add 并记录。 */
+  private _upsert(layer: any, track: Map<string, boolean>, id: string, geometry: object): void {
+    if (track.has(id)) {
+      layer.updateGeometries([geometry])
+    } else {
+      layer.add([geometry])
+      track.set(id, true)
+    }
+  }
+
   addMarker(id: string, latlng: LatLng, label = ''): void {
     this.ensureMarkerLayer()
     const geometry = {
@@ -69,12 +79,7 @@ export class OverlayManager {
       styleId: 'default',
       position: new this.TMap.LatLng(latlng.lat, latlng.lng),
     }
-    if (this.markers.has(id)) {
-      this.markerLayer.updateGeometries([geometry])
-    } else {
-      this.markerLayer.add([geometry])
-      this.markers.set(id, true)
-    }
+    this._upsert(this.markerLayer, this.markers, id, geometry)
   }
 
   removeMarker(id: string): void {
@@ -107,13 +112,7 @@ export class OverlayManager {
     if (points.length < 2) return
     this.ensurePolylineLayer()
     const path = points.map((p) => new this.TMap.LatLng(p.lat, p.lng))
-    const geometry = { id, styleId: 'default', paths: path }
-    if (this.polylines.has(id)) {
-      this.polylineLayer.updateGeometries([geometry])
-    } else {
-      this.polylineLayer.add([geometry])
-      this.polylines.set(id, true)
-    }
+    this._upsert(this.polylineLayer, this.polylines, id, { id, styleId: 'default', paths: path })
   }
 
   removePolyline(id: string): void {
@@ -159,12 +158,7 @@ export class OverlayManager {
       position: new this.TMap.LatLng(latlng.lat, latlng.lng),
       content: text,
     }
-    if (this.labels.has(id)) {
-      this.labelLayer.updateGeometries([geometry])
-    } else {
-      this.labelLayer.add([geometry])
-      this.labels.set(id, true)
-    }
+    this._upsert(this.labelLayer, this.labels, id, geometry)
   }
 
   removeLabel(id: string): void {
@@ -304,16 +298,25 @@ export class OverlayManager {
   }
 
   /**
-   * 切换多边形高亮：将 id 对应的多边形设为 highlight，其余可见多边形恢复 default。
-   * 传入 null 则取消所有高亮。预览多边形和隐藏多边形不受影响。
+   * 切换多边形高亮：将新 id 设为 highlight，将前一个高亮的多边形恢复 default。
+   * 传入 null 则只清除当前高亮。只需更新最多 2 个几何体（O(1)）。
    */
   setPolygonHighlight(id: string | null): void {
     if (!this.polygonLayer || this.polygons.size === 0) return
+    const prev = this.highlightedId
     this.highlightedId = id
     const updates: any[] = []
-    for (const [pid, paths] of this.polygons.entries()) {
-      if (this.polygonVisible.get(pid) === false) continue
-      updates.push({ id: pid, styleId: pid === id ? 'highlight' : 'default', paths })
+    if (prev !== null && prev !== id) {
+      const paths = this.polygons.get(prev)
+      if (paths && this.polygonVisible.get(prev) !== false) {
+        updates.push({ id: prev, styleId: 'default', paths })
+      }
+    }
+    if (id !== null) {
+      const paths = this.polygons.get(id)
+      if (paths && this.polygonVisible.get(id) !== false) {
+        updates.push({ id, styleId: 'highlight', paths })
+      }
     }
     if (updates.length > 0) {
       this.polygonLayer.updateGeometries(updates)
@@ -360,13 +363,7 @@ export class OverlayManager {
     if (points.length < 2) return
     this.ensureRubberBandLayer()
     const path = points.map((p) => new this.TMap.LatLng(p.lat, p.lng))
-    const geometry = { id, styleId: 'default', paths: path }
-    if (this.rubberBands.has(id)) {
-      this.rubberBandLayer.updateGeometries([geometry])
-    } else {
-      this.rubberBandLayer.add([geometry])
-      this.rubberBands.set(id, true)
-    }
+    this._upsert(this.rubberBandLayer, this.rubberBands, id, { id, styleId: 'default', paths: path })
   }
 
   removeRubberBand(id: string): void {
@@ -377,7 +374,8 @@ export class OverlayManager {
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
-  clearAll(): void {
+  /** 销毁测量图层（标记、折线、标签）并清空对应 track Map。clearAll 和 clearMeasurement 的共同实现。 */
+  private _destroyMeasurementLayers(): void {
     if (this.markerLayer) {
       this.markerLayer.setMap(null)
       this.markerLayer = null
@@ -393,6 +391,10 @@ export class OverlayManager {
       this.labelLayer = null
       this.labels.clear()
     }
+  }
+
+  clearAll(): void {
+    this._destroyMeasurementLayers()
     if (this.rubberBandLayer) {
       this.rubberBandLayer.setMap(null)
       this.rubberBandLayer = null
@@ -414,21 +416,7 @@ export class OverlayManager {
    * 用于工具切换时：多边形是用户持久内容，测量覆盖物是临时的。
    */
   clearMeasurement(): void {
-    if (this.markerLayer) {
-      this.markerLayer.setMap(null)
-      this.markerLayer = null
-      this.markers.clear()
-    }
-    if (this.polylineLayer) {
-      this.polylineLayer.setMap(null)
-      this.polylineLayer = null
-      this.polylines.clear()
-    }
-    if (this.labelLayer) {
-      this.labelLayer.setMap(null)
-      this.labelLayer = null
-      this.labels.clear()
-    }
+    this._destroyMeasurementLayers()
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────

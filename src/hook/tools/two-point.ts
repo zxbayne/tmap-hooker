@@ -2,7 +2,8 @@ import { haversine, formatDistance, getLabelStyleId } from '@shared/utils/distan
 import { HookEvent, sendToPanel } from '@shared/protocol'
 import { TOOL_IDS } from '@shared/tool-config'
 import { log } from '../logger'
-import type { ITool, ToolContext, LatLng } from './types'
+import type { ITool, ToolContext } from './types'
+import type { LatLng } from '@shared/utils/parse-coords'
 
 type State = 'idle' | 'waiting-a' | 'waiting-b'
 

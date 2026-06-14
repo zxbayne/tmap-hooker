@@ -107,16 +107,13 @@ export function useTool() {
         })
         break
 
-      case HookEvent.POLYGON_SELECTED:
-        polygonLayers.value.forEach((l) => {
-          if (l.id === msg.payload.id) {
-            l.selected = true
-            l.coords = msg.payload.coords
-          } else {
-            l.selected = false
-          }
-        })
+      case HookEvent.POLYGON_SELECTED: {
+        const prev = polygonLayers.value.find((l) => l.selected)
+        if (prev) { prev.selected = false }
+        const next = polygonLayers.value.find((l) => l.id === msg.payload.id)
+        if (next) { next.selected = true; next.coords = msg.payload.coords }
         break
+      }
 
       case HookEvent.POLYGON_DELETED: {
         const idx = polygonLayers.value.findIndex((l) => l.id === msg.payload.id)
@@ -192,7 +189,10 @@ export function useTool() {
 
   /** 图层列表行点击：本地立即标记选中，同时通知 hook 触发地图高亮。 */
   function selectPolygonFromPanel(id: string) {
-    polygonLayers.value.forEach((l) => { l.selected = l.id === id })
+    const prev = polygonLayers.value.find((l) => l.selected)
+    if (prev) prev.selected = false
+    const next = polygonLayers.value.find((l) => l.id === id)
+    if (next) next.selected = true
     sendCmd({ type: PanelCmd.SELECT_POLYGON, payload: { id } })
   }
 
@@ -218,11 +218,9 @@ export function useTool() {
     isMapReady,
     activeTool,
     segments,
-    totalM,
     totalLabel,
     pointCount,
     twoPointResult,
-    isMeasuring,
     // polygon
     polygonMode,
     drawingPointCount,

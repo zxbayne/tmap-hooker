@@ -1,22 +1,12 @@
 import type { OverlayManager } from '../overlay-manager'
+export type { LatLng } from '@shared/utils/parse-coords'
 
-/** 经纬度坐标，与 TMap.LatLng 结构对应，用纯数据对象传递以避免依赖 TMap 类型。 */
-export interface LatLng {
-  lat: number
-  lng: number
-}
-
-/** 工具向 panel 发送事件的函数签名，对应 `window.postMessage` 封装。 */
-export type MessageEmitter = (type: string, payload?: unknown) => void
-
-/** 工具激活时注入的上下文，包含 map 实例、覆盖物管理器和消息发射器。 */
+/** 工具激活时注入的上下文，包含 map 实例和覆盖物管理器。 */
 export interface ToolContext {
   /** TMap.Map 实例，用于注册/注销地图事件。 */
   map: any
   /** 管理地图上所有覆盖物（标记、线、标签、多边形）的统一接口。 */
   overlays: OverlayManager
-  /** 向 panel 发送事件消息的函数。 */
-  emit: MessageEmitter
 }
 
 /**
@@ -32,4 +22,8 @@ export interface ITool {
   deactivate(): void
   /** 重置工具到初始状态（清除覆盖物），但保持激活状态。 */
   reset(): void
+  /** 停止接收新输入并锁定当前结果（可选，仅部分工具实现）。 */
+  finish?(): void
+  /** 撤销最后一步操作（可选，仅部分工具实现）。 */
+  undo?(): void
 }

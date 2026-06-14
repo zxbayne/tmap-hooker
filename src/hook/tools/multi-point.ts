@@ -1,7 +1,8 @@
 import { haversine, formatDistance, getLabelStyleId } from '@shared/utils/distance'
 import { HookEvent, PanelCmd, sendToPanel } from '@shared/protocol'
 import { TOOL_IDS } from '@shared/tool-config'
-import type { ITool, ToolContext, LatLng } from './types'
+import type { ITool, ToolContext } from './types'
+import type { LatLng } from '@shared/utils/parse-coords'
 
 export class MultiPointTool implements ITool {
   readonly id = TOOL_IDS.MULTI_POINT

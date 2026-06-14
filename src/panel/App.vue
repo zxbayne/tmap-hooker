@@ -95,7 +95,6 @@ const {
   twoPointResult,
   polygonMode,
   drawingPointCount,
-  drawingCoordsText,
   polygonLayers,
   setTool,
   finish,

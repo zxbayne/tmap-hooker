@@ -58,8 +58,7 @@ export class ToolManager {
 
     const ctx: ToolContext = {
       map: this.map,
-      overlays: this.overlays,
-      emit: (type, payload) => window.postMessage({ source: 'tmap-hook', type, payload }, '*'),
+      overlays: this.overlays!,
     }
 
     this.activeTool = tool
@@ -108,17 +107,11 @@ export class ToolManager {
   // ── General tool commands ─────────────────────────────────────────────────
 
   finish(): void {
-    const tool = this.activeTool
-    if (tool && 'finish' in tool && typeof (tool as any).finish === 'function') {
-      ;(tool as any).finish()
-    }
+    this.activeTool?.finish?.()
   }
 
   undo(): void {
-    const tool = this.activeTool
-    if (tool && 'undo' in tool && typeof (tool as any).undo === 'function') {
-      ;(tool as any).undo()
-    }
+    this.activeTool?.undo?.()
   }
 
   clear(): void {

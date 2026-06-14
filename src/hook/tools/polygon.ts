@@ -2,7 +2,8 @@ import { HookEvent, sendToPanel } from '@shared/protocol'
 import { TOOL_IDS } from '@shared/tool-config'
 import { parseCoords, coordsToText } from '@shared/utils/parse-coords'
 import { log } from '../logger'
-import type { ITool, ToolContext, LatLng } from './types'
+import type { ITool, ToolContext } from './types'
+import type { LatLng } from '@shared/utils/parse-coords'
 
 export class PolygonTool implements ITool {
   readonly id = TOOL_IDS.POLYGON
@@ -34,8 +35,8 @@ export class PolygonTool implements ITool {
   private idleMapClickHandler: ((evt: any) => void) | null = null
   private _polygonClickFired = false
 
-  private readonly RUBBER_BAND_ID = 'poly-rubber-band'
-  private readonly PREVIEW_POLY_ID = 'poly-preview'
+  private static readonly RUBBER_BAND_ID = 'poly-rubber-band'
+  private static readonly PREVIEW_POLY_ID = 'poly-preview'
 
   // ── ITool interface ───────────────────────────────────────────────────────
 
@@ -155,8 +156,8 @@ export class PolygonTool implements ITool {
         this.dblClickHandler = null
       }
       this._clearDrawingMarkers()
-      this.ctx.overlays.removeRubberBand(this.RUBBER_BAND_ID)
-      this.ctx.overlays.removePreviewPolygon(this.PREVIEW_POLY_ID)
+      this.ctx.overlays.removeRubberBand(PolygonTool.RUBBER_BAND_ID)
+      this.ctx.overlays.removePreviewPolygon(PolygonTool.PREVIEW_POLY_ID)
     }
     if (this.keydownHandler) {
       document.removeEventListener('keydown', this.keydownHandler)
@@ -197,16 +198,16 @@ export class PolygonTool implements ITool {
     if (this.mode !== 'drawing' || this.drawingPoints.length === 0) return
     this._popLastDrawingPoint()
     if (this.drawingPoints.length === 0) {
-      this.ctx?.overlays.removeRubberBand(this.RUBBER_BAND_ID)
+      this.ctx?.overlays.removeRubberBand(PolygonTool.RUBBER_BAND_ID)
     }
     if (this.drawingPoints.length >= 3) {
       this.ctx?.overlays.setPreviewPolygon(
-        this.PREVIEW_POLY_ID,
+        PolygonTool.PREVIEW_POLY_ID,
         this.drawingPoints,
         (id) => this._onPolygonClick(id),
       )
     } else {
-      this.ctx?.overlays.removePreviewPolygon(this.PREVIEW_POLY_ID)
+      this.ctx?.overlays.removePreviewPolygon(PolygonTool.PREVIEW_POLY_ID)
     }
     const coordsText = coordsToText(this.drawingPoints)
     sendToPanel({
@@ -256,7 +257,7 @@ export class PolygonTool implements ITool {
 
     if (this.drawingPoints.length >= 3) {
       this.ctx.overlays.setPreviewPolygon(
-        this.PREVIEW_POLY_ID,
+        PolygonTool.PREVIEW_POLY_ID,
         this.drawingPoints,
         (id) => this._onPolygonClick(id),
       )
@@ -274,7 +275,7 @@ export class PolygonTool implements ITool {
   private onMouseMove(evt: any): void {
     if (!this.ctx || this.mode !== 'drawing' || this.drawingPoints.length === 0) return
     const cursor: LatLng = { lat: evt.latLng.lat, lng: evt.latLng.lng }
-    this.ctx.overlays.setRubberBand(this.RUBBER_BAND_ID, [...this.drawingPoints, cursor])
+    this.ctx.overlays.setRubberBand(PolygonTool.RUBBER_BAND_ID, [...this.drawingPoints, cursor])
   }
 
   /**
@@ -298,7 +299,7 @@ export class PolygonTool implements ITool {
   /** 点击已有多边形时的回调（图层级注册，通过 evt.geometry.id 路由）。 */
   private _onPolygonClick(id: string): void {
     this._polygonClickFired = true
-    if (id === this.PREVIEW_POLY_ID) return
+    if (id === PolygonTool.PREVIEW_POLY_ID) return
     if (this.mode === 'drawing') return
     if (this._justFinishedDrag) return
     if (this.selectedId === id) return
@@ -337,13 +338,13 @@ export class PolygonTool implements ITool {
   // ── Polygon drag ──────────────────────────────────────────────────────────
 
   private _onPolygonMousedown(id: string, latLng: any): void {
-    console.log('[TMH:drag] _onPolygonMousedown called — id:', id, 'mode:', this.mode, 'selectedId:', this.selectedId, 'latLng:', latLng)
-    if (this.mode !== 'idle') { console.log('[TMH:drag] BLOCKED — not idle'); return }
-    if (id === this.PREVIEW_POLY_ID) { console.log('[TMH:drag] BLOCKED — preview polygon'); return }
-    if (!this.ctx) { console.log('[TMH:drag] BLOCKED — no ctx'); return }
-    if (id !== this.selectedId) { console.log('[TMH:drag] BLOCKED — id', id, '!== selectedId', this.selectedId); return }
+    log('[drag] mousedown — id:', id, 'mode:', this.mode, 'selectedId:', this.selectedId)
+    if (this.mode !== 'idle') return
+    if (id === PolygonTool.PREVIEW_POLY_ID) return
+    if (!this.ctx) return
+    if (id !== this.selectedId) return
     const originalCoords = this.polygonCoords.get(id)
-    if (!originalCoords) { console.log('[TMH:drag] BLOCKED — no coords for id', id); return }
+    if (!originalCoords) return
 
     this.isDragging = true
     this.draggingId = id
@@ -353,16 +354,15 @@ export class PolygonTool implements ITool {
 
     try {
       this.ctx.map.setDraggable(false)
-      console.log('[TMH:drag] map.setDraggable(false) called')
     } catch (e) {
-      console.log('[TMH:drag] map.setDraggable(false) threw:', e)
+      log('[drag] map.setDraggable(false) threw:', e)
     }
 
     this.dragMoveHandler = (evt: any) => this._onDragMove(evt)
     this.dragUpHandler = () => this._onDragUp()
     this.ctx.map.on('mousemove', this.dragMoveHandler)
     document.addEventListener('mouseup', this.dragUpHandler)
-    console.log('[TMH:drag] drag started — registered mousemove on map + mouseup on document')
+    log('[drag] started')
   }
 
   private _onDragMove(evt: any): void {
@@ -371,16 +371,11 @@ export class PolygonTool implements ITool {
     const dLng = evt.latLng.lng - this.dragStartLatLng.lng
     const newCoords = this.dragOriginalCoords.map((p) => ({ lat: p.lat + dLat, lng: p.lng + dLng }))
     this.dragCurrentCoords = newCoords
-    console.log('[TMH:drag] move — dLat:', dLat.toFixed(6), 'dLng:', dLng.toFixed(6))
     this.ctx.overlays.updatePolygonPath(this.draggingId, newCoords)
   }
 
   private _onDragUp(): void {
-    console.log('[TMH:drag] _onDragUp called — isDragging:', this.isDragging)
-    if (!this.isDragging || !this.dragOriginalCoords || !this.draggingId || !this.ctx) {
-      console.log('[TMH:drag] _onDragUp SKIPPED — missing state')
-      return
-    }
+    if (!this.isDragging || !this.dragOriginalCoords || !this.draggingId || !this.ctx) return
     const finalCoords = this.dragCurrentCoords ?? [...this.dragOriginalCoords]
     const id = this.draggingId
 
