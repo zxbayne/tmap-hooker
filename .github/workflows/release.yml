@@ -29,11 +29,21 @@ jobs:
           cp -r dist tmap-hooker-chrome
           zip -r tmap-hooker-chrome-v${{ env.VERSION }}.zip tmap-hooker-chrome
 
+      - name: Pack CRX
+        env:
+          CHROME_CRX_PEM: ${{ secrets.CHROME_CRX_PEM }}
+        run: |
+          echo "$CHROME_CRX_PEM" > key.pem
+          npx --yes crx3 -p key.pem -o tmap-hooker-chrome-v${{ env.VERSION }}.crx dist
+          rm -f key.pem
+
       - name: Create / update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.VERSION }}
           name: v${{ env.VERSION }}
-          files: tmap-hooker-chrome-v${{ env.VERSION }}.zip
+          files: |
+            tmap-hooker-chrome-v${{ env.VERSION }}.zip
+            tmap-hooker-chrome-v${{ env.VERSION }}.crx
           make_latest: true
           overwrite: true
