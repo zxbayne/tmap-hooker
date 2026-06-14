@@ -21,6 +21,13 @@ export class PolygonTool implements ITool {
   private dblClickHandler: ((evt: any) => void) | null = null
   private keydownHandler: ((evt: KeyboardEvent) => void) | null = null
 
+  // 编辑相关
+  private editingId: string | null = null
+  private editOriginalCoords: LatLng[] | null = null
+  private editCurrentCoords: LatLng[] | null = null
+  private editor: any = null
+  private editLayer: any = null
+
   // 拖动相关
   private isDragging = false
   private dragStartLatLng: { lat: number; lng: number } | null = null
@@ -48,6 +55,9 @@ export class PolygonTool implements ITool {
   }
 
   deactivate(): void {
+    if (this.editingId !== null) {
+      this._cancelEditInternal()
+    }
     if (this.mode === 'drawing') {
       this._cleanupDrawingState()
     }
@@ -62,6 +72,9 @@ export class PolygonTool implements ITool {
    * Panel 层的 clear() 已重置 polygonLayers，此处只负责清理地图覆盖物。
    */
   reset(): void {
+    if (this.editingId !== null) {
+      this._cancelEditInternal()
+    }
     if (this.mode === 'drawing') {
       this._cleanupDrawingState()
     }
@@ -82,6 +95,9 @@ export class PolygonTool implements ITool {
   /** 进入绘制模式：注册所有绘制相关事件监听器，取消当前选中。 */
   enterDrawingMode(): void {
     if (!this.ctx) return
+    if (this.editingId !== null) {
+      this._cancelEditInternal()
+    }
     this._cleanupDrawingState()
     this._unregisterIdleClick()
     this.mode = 'drawing'
@@ -220,6 +236,9 @@ export class PolygonTool implements ITool {
   /** 按 id 删除指定多边形（Panel 图层列表删除按钮触发）。 */
   deleteById(id: string): void {
     if (!this.ctx) return
+    if (this.editingId === id) {
+      this._cancelEditInternal()
+    }
     this.ctx.overlays.removePolygon(id)
     this.polygonIds.delete(id)
     this.polygonCoords.delete(id)
@@ -301,6 +320,7 @@ export class PolygonTool implements ITool {
     this._polygonClickFired = true
     if (id === PolygonTool.PREVIEW_POLY_ID) return
     if (this.mode === 'drawing') return
+    if (this.editingId !== null) return
     if (this._justFinishedDrag) return
     if (this.selectedId === id) return
     this.selectedId = id
@@ -339,6 +359,7 @@ export class PolygonTool implements ITool {
 
   private _onPolygonMousedown(id: string, latLng: any): void {
     log('[drag] mousedown — id:', id, 'mode:', this.mode, 'selectedId:', this.selectedId)
+    if (this.editingId !== null) return
     if (this.mode !== 'idle') return
     if (id === PolygonTool.PREVIEW_POLY_ID) return
     if (!this.ctx) return
@@ -410,6 +431,184 @@ export class PolygonTool implements ITool {
     this.dragStartLatLng = null
     this.dragOriginalCoords = null
     this.dragCurrentCoords = null
+  }
+
+  // ── Polygon editing ───────────────────────────────────────────────────────
+
+  /** 进入顶点编辑模式，使用 TMap.tools.GeometryEditor 在隔离图层上编辑指定多边形。 */
+  startEditById(id: string): void {
+    if (!this.ctx) return
+    const TMap = (window as any).TMap
+    if (!TMap?.tools?.GeometryEditor) {
+      log('startEditById: TMap.tools.GeometryEditor not available')
+      return
+    }
+    if (this.editingId !== null) {
+      this._cancelEditInternal()
+    }
+    if (this.mode === 'drawing') {
+      this._cleanupDrawingState()
+      sendToPanel({ type: HookEvent.POLYGON_MODE_CHANGED, payload: { mode: 'idle', drawingPointCount: 0 } })
+    }
+
+    const originalCoords = this.polygonCoords.get(id)
+    if (!originalCoords) return
+
+    this.editOriginalCoords = [...originalCoords]
+    this.editCurrentCoords = null
+    this.editingId = id
+
+    // 隐藏主层中该多边形
+    this.ctx.overlays.setPolygonVisible(id, false)
+
+    // 创建临时编辑图层（含该多边形）
+    const closedPath = [...originalCoords]
+    if (closedPath.length > 0) {
+      const first = closedPath[0]
+      const last = closedPath[closedPath.length - 1]
+      if (first.lat !== last.lat || first.lng !== last.lng) closedPath.push(first)
+    }
+    const tmapPath = closedPath.map((p: LatLng) => new TMap.LatLng(p.lat, p.lng))
+
+    this.editLayer = new TMap.MultiPolygon({
+      map: this.ctx.map,
+      styles: {
+        default: new TMap.PolygonStyle({
+          color: 'rgba(255, 107, 53, 0.2)',
+          borderColor: '#FF6B35',
+          borderWidth: 2,
+        }),
+        highlight: new TMap.PolygonStyle({
+          color: 'rgba(255, 255, 0, 0.35)',
+          borderColor: '#FFD700',
+          borderWidth: 3,
+        }),
+      },
+      geometries: [{ id, styleId: 'default', paths: [tmapPath] }],
+    })
+
+    this.editor = new TMap.tools.GeometryEditor({
+      map: this.ctx.map,
+      overlayList: [{ overlay: this.editLayer, id: 'edit-layer', selectedStyleId: 'highlight' }],
+      actionMode: TMap.tools.constants.EDITOR_ACTION.INTERACT,
+      activeOverlayId: 'edit-layer',
+      selectable: true,
+      snappable: true,
+    })
+
+    this.editor.on('adjust_complete', (result: any) => {
+      log('adjust_complete fired, result keys:', result ? Object.keys(result).join(',') : 'null')
+      this._syncEditCoords(result)
+      log('after adjust_complete sync, editCurrentCoords count:', this.editCurrentCoords?.length ?? 'null')
+    })
+    this.editor.on('delete_complete', (result: any) => {
+      log('delete_complete fired')
+      this._syncEditCoords(result)
+    })
+
+    this._unregisterIdleClick()
+    sendToPanel({ type: HookEvent.POLYGON_EDIT_STARTED, payload: { id } })
+    log('startEditById:', id)
+  }
+
+  /** 提交编辑：用最终坐标更新主层，销毁编辑器。 */
+  finishEdit(): void {
+    if (!this.ctx || this.editingId === null) return
+    // 最后一次强制同步（从 editLayer 直读，不依赖缓存）
+    this._syncEditCoords()
+    const id = this.editingId
+    log('finishEdit:', id, '- editCurrentCoords:', this.editCurrentCoords ? this.editCurrentCoords.length + ' pts' : 'null — falling back to original')
+    const finalCoords = this.editCurrentCoords ?? this.editOriginalCoords!
+    this._destroyEditor()
+    this.polygonCoords.set(id, finalCoords)
+    this.ctx.overlays.addPolygon(id, finalCoords,
+      (clickedId) => this._onPolygonClick(clickedId),
+      (clickedId, latLng) => this._onPolygonMousedown(clickedId, latLng),
+    )
+    this.ctx.overlays.setPolygonVisible(id, true)
+    this.editingId = null
+    this._registerIdleClick()
+    sendToPanel({ type: HookEvent.POLYGON_EDIT_FINISHED, payload: { id, coords: finalCoords } })
+    log('finishEdit:', id)
+  }
+
+  /** 取消编辑：恢复原始多边形，销毁编辑器。 */
+  cancelEdit(): void {
+    if (this.editingId === null) return
+    const id = this.editingId
+    this._cancelEditInternal()
+    sendToPanel({ type: HookEvent.POLYGON_EDIT_CANCELLED, payload: { id } })
+    log('cancelEdit:', id)
+  }
+
+  /** 内部取消逻辑（不发送 CANCELLED 事件，供 deactivate/reset 等场景调用）。 */
+  private _cancelEditInternal(): void {
+    if (this.editingId === null) return
+    const id = this.editingId
+    this._destroyEditor()
+    if (this.ctx) {
+      this.ctx.overlays.setPolygonVisible(id, true)
+    }
+    this.editingId = null
+    if (this.ctx) {
+      this._registerIdleClick()
+    }
+  }
+
+  private _destroyEditor(): void {
+    try { this.editor?.setMap?.(null) } catch { /* ignore */ }
+    try { this.editor?.destroy?.() } catch { /* ignore */ }
+    try { this.editLayer?.setMap?.(null) } catch { /* ignore */ }
+    this.editor = null
+    this.editLayer = null
+    this.editOriginalCoords = null
+    this.editCurrentCoords = null
+  }
+
+  /**
+   * 从编辑器事件结果或 editLayer 中读取最新坐标并缓存。
+   * 优先使用事件结果中的 geometry.paths（adjust_complete 直接携带最新数据），
+   * 若缺失则回落到 editLayer.getGeometries()。
+   */
+  private _syncEditCoords(result?: any): void {
+    // 优先：从事件结果中提取（adjust_complete 结果本身即几何体，含 id/styleId/paths/rank）
+    if (result?.paths) {
+      const paths = result.paths
+      const rawPts = Array.isArray(paths[0]) ? paths[0] : paths
+      if (rawPts.length > 0) {
+        log('_syncEditCoords: using result.geometry.paths, pts:', rawPts.length)
+        this.editCurrentCoords = this._normalizeEditCoords(rawPts)
+        return
+      }
+    }
+    // 回落：从图层几何体读取
+    if (!this.editLayer) {
+      log('_syncEditCoords: no editLayer')
+      return
+    }
+    const geos = this.editLayer.getGeometries?.()
+    log('_syncEditCoords: getGeometries returned', geos ? geos.length + ' geos' : 'null')
+    if (!geos || geos.length === 0) return
+    const paths = geos[0]?.paths
+    log('_syncEditCoords: paths type:', Array.isArray(paths) ? 'array len=' + paths.length : typeof paths)
+    if (!paths || paths.length === 0) return
+    const rawPts = Array.isArray(paths[0]) ? paths[0] : paths
+    log('_syncEditCoords: rawPts len:', rawPts.length, 'first item type:', rawPts[0] ? typeof rawPts[0] : 'empty')
+    if (rawPts.length === 0) return
+    this.editCurrentCoords = this._normalizeEditCoords(rawPts)
+    log('_syncEditCoords: normalized to', this.editCurrentCoords.length, 'pts')
+  }
+
+  private _normalizeEditCoords(pts: any[]): LatLng[] {
+    let coords: LatLng[] = pts.map((p: any) => ({
+      lat: typeof p.getLat === 'function' ? p.getLat() : p.lat,
+      lng: typeof p.getLng === 'function' ? p.getLng() : p.lng,
+    }))
+    if (coords.length > 1) {
+      const first = coords[0]; const last = coords[coords.length - 1]
+      if (first.lat === last.lat && first.lng === last.lng) coords = coords.slice(0, -1)
+    }
+    return coords
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────

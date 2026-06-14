@@ -16,6 +16,7 @@
       :polygon-mode="polygonMode"
       :drawing-point-count="drawingPointCount"
       :polygon-layers="polygonLayers"
+      :editing-polygon-id="editingPolygonId"
       @start-drawing="emit('startDrawing')"
       @finish-drawing="emit('finishDrawing')"
       @cancel-drawing="emit('cancelDrawing')"
@@ -25,6 +26,9 @@
       @toggle-visible="(id) => emit('toggleVisible', id)"
       @select-layer="(id) => emit('selectLayer', id)"
       @draw-from-text="(input) => emit('drawFromText', input)"
+      @start-edit="(id) => emit('startEdit', id)"
+      @finish-edit="emit('finishEdit')"
+      @cancel-edit="emit('cancelEdit')"
     />
   </div>
 </template>
@@ -48,6 +52,7 @@ const props = defineProps<{
   polygonMode: 'idle' | 'drawing'
   drawingPointCount: number
   polygonLayers: PolygonLayer[]
+  editingPolygonId: string | null
 }>()
 
 const emit = defineEmits<{
@@ -60,6 +65,9 @@ const emit = defineEmits<{
   toggleVisible: [id: string]
   selectLayer: [id: string]
   drawFromText: [input: string]
+  startEdit: [id: string]
+  finishEdit: []
+  cancelEdit: []
 }>()
 
 const showResult = computed(

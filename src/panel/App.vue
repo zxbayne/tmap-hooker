@@ -54,6 +54,7 @@
       :polygon-mode="polygonMode"
       :drawing-point-count="drawingPointCount"
       :polygon-layers="polygonLayers"
+      :editing-polygon-id="editingPolygonId"
       @start-drawing="startDrawingPolygon"
       @finish-drawing="finishDrawingPolygon"
       @cancel-drawing="cancelDrawingPolygon"
@@ -63,6 +64,9 @@
       @toggle-visible="(id) => togglePolygonVisible(id)"
       @select-layer="(id) => selectPolygonFromPanel(id)"
       @draw-from-text="(input) => drawPolygon(input)"
+      @start-edit="(id) => startEditPolygon(id)"
+      @finish-edit="finishEditPolygon"
+      @cancel-edit="cancelEditPolygon"
     />
 
     <!-- 操作按钮栏（多边形工具激活时隐藏） -->
@@ -96,6 +100,7 @@ const {
   polygonMode,
   drawingPointCount,
   polygonLayers,
+  editingPolygonId,
   setTool,
   finish,
   undo,
@@ -109,6 +114,9 @@ const {
   selectPolygonFromPanel,
   togglePolygonVisible,
   renamePolygon,
+  startEditPolygon,
+  finishEditPolygon,
+  cancelEditPolygon,
   setDebug,
 } = useTool()
 

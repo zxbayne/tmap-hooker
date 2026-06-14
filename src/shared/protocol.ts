@@ -26,6 +26,9 @@ export const enum HookEvent {
   POLYGON_SELECTED = 'POLYGON_SELECTED',
   POLYGON_DELETED = 'POLYGON_DELETED',
   POLYGON_MODE_CHANGED = 'POLYGON_MODE_CHANGED',
+  POLYGON_EDIT_STARTED = 'POLYGON_EDIT_STARTED',
+  POLYGON_EDIT_FINISHED = 'POLYGON_EDIT_FINISHED',
+  POLYGON_EDIT_CANCELLED = 'POLYGON_EDIT_CANCELLED',
 }
 
 // Panel → Hook 命令：panel 层用户操作时发送给 hook
@@ -45,6 +48,9 @@ export const enum PanelCmd {
   UNDO_POLYGON_POINT = 'UNDO_POLYGON_POINT',
   SELECT_POLYGON = 'SELECT_POLYGON',
   TOGGLE_POLYGON_VISIBLE = 'TOGGLE_POLYGON_VISIBLE',
+  START_EDIT_POLYGON = 'START_EDIT_POLYGON',
+  FINISH_EDIT_POLYGON = 'FINISH_EDIT_POLYGON',
+  CANCEL_EDIT_POLYGON = 'CANCEL_EDIT_POLYGON',
 }
 
 // ── Hook → Panel payload 类型 ────────────────────────────────────────────────
@@ -113,6 +119,22 @@ export interface PolygonModeChangedPayload {
   drawingPointCount: number
 }
 
+/** 多边形顶点编辑模式已启动。 */
+export interface PolygonEditStartedPayload {
+  id: string
+}
+
+/** 多边形顶点编辑完成，附带最终坐标。 */
+export interface PolygonEditFinishedPayload {
+  id: string
+  coords: LatLng[]
+}
+
+/** 多边形顶点编辑已取消。 */
+export interface PolygonEditCancelledPayload {
+  id: string
+}
+
 // ── Panel → Hook payload 类型 ────────────────────────────────────────────────
 
 /** 切换工具的命令，toolId 为空字符串时表示取消激活。 */
@@ -146,6 +168,11 @@ export interface TogglePolygonVisiblePayload {
   visible: boolean
 }
 
+/** 启动指定多边形的顶点编辑模式。 */
+export interface StartEditPolygonPayload {
+  id: string
+}
+
 // ── 消息联合类型（用于 TypeScript 类型收窄） ────────────────────────────────
 
 /**
@@ -166,6 +193,9 @@ export type HookMessage =
   | { source: typeof HOOK_SOURCE; type: HookEvent.POLYGON_SELECTED; payload: PolygonSelectedPayload }
   | { source: typeof HOOK_SOURCE; type: HookEvent.POLYGON_DELETED; payload: PolygonDeletedPayload }
   | { source: typeof HOOK_SOURCE; type: HookEvent.POLYGON_MODE_CHANGED; payload: PolygonModeChangedPayload }
+  | { source: typeof HOOK_SOURCE; type: HookEvent.POLYGON_EDIT_STARTED; payload: PolygonEditStartedPayload }
+  | { source: typeof HOOK_SOURCE; type: HookEvent.POLYGON_EDIT_FINISHED; payload: PolygonEditFinishedPayload }
+  | { source: typeof HOOK_SOURCE; type: HookEvent.POLYGON_EDIT_CANCELLED; payload: PolygonEditCancelledPayload }
 
 export type PanelMessage =
   | { source: typeof PANEL_SOURCE; type: PanelCmd.PANEL_READY }
@@ -182,6 +212,9 @@ export type PanelMessage =
   | { source: typeof PANEL_SOURCE; type: PanelCmd.UNDO_POLYGON_POINT }
   | { source: typeof PANEL_SOURCE; type: PanelCmd.SELECT_POLYGON; payload: SelectPolygonPayload }
   | { source: typeof PANEL_SOURCE; type: PanelCmd.TOGGLE_POLYGON_VISIBLE; payload: TogglePolygonVisiblePayload }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.START_EDIT_POLYGON; payload: StartEditPolygonPayload }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.FINISH_EDIT_POLYGON }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.CANCEL_EDIT_POLYGON }
 
 /** 从 hook 层向 panel 层发送事件消息（自动附加 source 字段）。 */
 export function sendToPanel(msg: DistributiveOmit<HookMessage, 'source'>): void {

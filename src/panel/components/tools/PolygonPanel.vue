@@ -2,12 +2,12 @@
   <div class="polygon-panel">
     <!-- 模式状态栏 -->
     <div class="poly-mode-bar">
-      <span class="poly-mode-badge" :class="polygonMode">
-        {{ polygonMode === 'drawing' ? `● 绘制中 ${drawingPointCount}点` : '选择模式' }}
+      <span class="poly-mode-badge" :class="editingPolygonId ? 'editing' : polygonMode">
+        {{ editingPolygonId ? '✎ 编辑模式' : polygonMode === 'drawing' ? `● 绘制中 ${drawingPointCount}点` : '选择模式' }}
       </span>
       <button
         class="poly-new-btn"
-        :disabled="polygonMode === 'drawing'"
+        :disabled="polygonMode === 'drawing' || !!editingPolygonId"
         @click="$emit('startDrawing')"
       >
         + 新建多边形
@@ -69,7 +69,7 @@
           <!-- 名称（双击进入编辑） -->
           <input
             v-if="editingId === layer.id"
-            :ref="(el) => { nameInputRef.value = el as HTMLInputElement | null }"
+            :ref="setNameInputRef"
             class="poly-name-input"
             :value="layer.name"
             @blur="onNameBlur(layer.id, $event)"
@@ -86,14 +86,35 @@
             {{ layer.name }}
           </span>
 
-          <!-- 删除按钮 -->
-          <button
-            class="poly-layer-del"
-            title="删除"
-            @click.stop="$emit('deleteLayer', layer.id)"
-          >
-            🗑
-          </button>
+          <!-- 编辑/完成/取消按钮（用 span 稳定锚点，避免 v-for 内裸 template 扰乱 ref 生命周期） -->
+          <span class="poly-layer-actions">
+            <template v-if="editingPolygonId === layer.id">
+              <button
+                class="poly-layer-edit-done"
+                title="完成编辑"
+                @click.stop="$emit('finishEdit')"
+              >✓</button>
+              <button
+                class="poly-layer-edit-cancel"
+                title="取消编辑"
+                @click.stop="$emit('cancelEdit')"
+              >✗</button>
+            </template>
+            <template v-else>
+              <button
+                class="poly-layer-edit"
+                title="编辑顶点"
+                :disabled="!!editingPolygonId || polygonMode === 'drawing'"
+                @click.stop="$emit('startEdit', layer.id)"
+              >✏️</button>
+              <button
+                class="poly-layer-del"
+                title="删除"
+                :disabled="!!editingPolygonId"
+                @click.stop="$emit('deleteLayer', layer.id)"
+              >🗑</button>
+            </template>
+          </span>
         </div>
       </div>
     </div>
@@ -171,6 +192,7 @@ const props = defineProps<{
   polygonMode: 'idle' | 'drawing'
   drawingPointCount: number
   polygonLayers: PolygonLayer[]
+  editingPolygonId: string | null
 }>()
 
 const emit = defineEmits<{
@@ -183,12 +205,17 @@ const emit = defineEmits<{
   toggleVisible: [id: string]
   selectLayer: [id: string]
   drawFromText: [input: string]
+  startEdit: [id: string]
+  finishEdit: []
+  cancelEdit: []
 }>()
 
 const coordsExpanded = ref(false)
 const localCoords = ref('')
 const editingId = ref<string | null>(null)
 const nameInputRef = ref<HTMLInputElement | null>(null)
+// 稳定的 ref 回调：不在模板内写内联箭头函数，避免每次渲染创建新闭包导致 Vue ref 生命周期混乱
+const setNameInputRef = (el: HTMLInputElement | null) => { nameInputRef.value = el }
 
 // 坐标导出
 const coordsFmt = ref<'array' | 'semicolon'>('array')

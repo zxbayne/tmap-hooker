@@ -36,6 +36,7 @@ export function useTool() {
   /** 当前绘制中各顶点坐标文本，供坐标导入折叠区同步显示。 */
   const drawingCoordsText = ref('')
   const polygonLayers = ref<PolygonLayer[]>([])
+  const editingPolygonId = ref<string | null>(null)
   let polygonNameCounter = 0
 
   const totalLabel = computed(() => (totalM.value > 0 ? formatDistance(totalM.value) : ''))
@@ -120,6 +121,21 @@ export function useTool() {
         if (idx !== -1) polygonLayers.value.splice(idx, 1)
         break
       }
+
+      case HookEvent.POLYGON_EDIT_STARTED:
+        editingPolygonId.value = msg.payload.id
+        break
+
+      case HookEvent.POLYGON_EDIT_FINISHED: {
+        editingPolygonId.value = null
+        const edited = polygonLayers.value.find((l) => l.id === msg.payload.id)
+        if (edited) edited.coords = msg.payload.coords
+        break
+      }
+
+      case HookEvent.POLYGON_EDIT_CANCELLED:
+        editingPolygonId.value = null
+        break
     }
   })
 
@@ -210,6 +226,18 @@ export function useTool() {
     if (layer) layer.name = name
   }
 
+  function startEditPolygon(id: string) {
+    sendCmd({ type: PanelCmd.START_EDIT_POLYGON, payload: { id } })
+  }
+
+  function finishEditPolygon() {
+    sendCmd({ type: PanelCmd.FINISH_EDIT_POLYGON })
+  }
+
+  function cancelEditPolygon() {
+    sendCmd({ type: PanelCmd.CANCEL_EDIT_POLYGON })
+  }
+
   function setDebug(enabled: boolean) {
     sendCmd({ type: PanelCmd.SET_DEBUG, payload: { enabled } })
   }
@@ -226,6 +254,7 @@ export function useTool() {
     drawingPointCount,
     drawingCoordsText,
     polygonLayers,
+    editingPolygonId,
     // commands
     setTool,
     finish,
@@ -240,6 +269,9 @@ export function useTool() {
     selectPolygonFromPanel,
     togglePolygonVisible,
     renamePolygon,
+    startEditPolygon,
+    finishEditPolygon,
+    cancelEditPolygon,
     setDebug,
   }
 }

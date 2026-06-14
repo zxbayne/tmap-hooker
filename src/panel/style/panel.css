@@ -333,6 +333,12 @@
   animation: poly-pulse 1.6s ease infinite;
 }
 
+.poly-mode-badge.editing {
+  background: rgba(120, 156, 255, 0.15);
+  color: #789CFF;
+  border: 1px solid rgba(120, 156, 255, 0.5);
+}
+
 @keyframes poly-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.55; }
@@ -558,8 +564,72 @@
   transition: color 0.12s;
 }
 
-.poly-layer-del:hover {
+.poly-layer-del:hover:not(:disabled) {
   color: #e06060;
+}
+
+.poly-layer-del:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+
+.poly-layer-actions {
+  display: contents;
+}
+
+.poly-layer-edit {
+  background: none;
+  border: none;
+  color: #555;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0 2px;
+  flex-shrink: 0;
+  line-height: 1;
+  transition: color 0.12s;
+}
+
+.poly-layer-edit:hover:not(:disabled) {
+  color: #789CFF;
+}
+
+.poly-layer-edit:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+
+.poly-layer-edit-done {
+  background: none;
+  border: none;
+  color: #4caf50;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 2px;
+  flex-shrink: 0;
+  line-height: 1;
+  font-weight: 700;
+  transition: color 0.12s;
+}
+
+.poly-layer-edit-done:hover {
+  color: #81c784;
+}
+
+.poly-layer-edit-cancel {
+  background: none;
+  border: none;
+  color: #e06060;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 2px;
+  flex-shrink: 0;
+  line-height: 1;
+  font-weight: 700;
+  transition: color 0.12s;
+}
+
+.poly-layer-edit-cancel:hover {
+  color: #ef9a9a;
 }
 
 /* 坐标导出区 */

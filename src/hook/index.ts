@@ -65,5 +65,14 @@ window.addEventListener('message', (event: MessageEvent) => {
     case PanelCmd.TOGGLE_POLYGON_VISIBLE:
       toolManager.togglePolygonVisible(msg.payload.id, msg.payload.visible)
       break
+    case PanelCmd.START_EDIT_POLYGON:
+      toolManager.startEditPolygon(msg.payload.id)
+      break
+    case PanelCmd.FINISH_EDIT_POLYGON:
+      toolManager.finishEditPolygon()
+      break
+    case PanelCmd.CANCEL_EDIT_POLYGON:
+      toolManager.cancelEditPolygon()
+      break
   }
 })

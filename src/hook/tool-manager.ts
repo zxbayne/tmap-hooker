@@ -104,6 +104,18 @@ export class ToolManager {
     this._polygon()?.setVisible(id, visible)
   }
 
+  startEditPolygon(id: string): void {
+    this._polygon()?.startEditById(id)
+  }
+
+  finishEditPolygon(): void {
+    this._polygon()?.finishEdit()
+  }
+
+  cancelEditPolygon(): void {
+    this._polygon()?.cancelEdit()
+  }
+
   // ── General tool commands ─────────────────────────────────────────────────
 
   finish(): void {
