@@ -13,21 +13,14 @@ export function installMapBridge(toolManager: ToolManager): void {
 
   trySetterTrap(toolManager)
 
+  // 持续轮询：SPA 场景下 TMap 可能被替换为新实例（页面切换后重新加载）。
+  // 轮询永不停止 — tryPrototypePatch 本身幂等（ALREADY_PATCHED 标志），
+  // 每 200ms 检查一次几乎零开销。
   POLL_TIMER = setInterval(() => {
     pollCount++
     const TMap = (window as any).TMap
-    log(`poll #${pollCount}: window.TMap =`, TMap, '| Map =', TMap?.Map)
-
-    if (tryPrototypePatch(TMap, toolManager)) {
-      log('prototype patched on poll #' + pollCount + ', stopping poll')
-      clearInterval(POLL_TIMER!)
-      POLL_TIMER = null
-    }
-
-    if (pollCount >= 50) {
-      log('gave up polling after 50 attempts (10s). TMap never appeared.')
-      clearInterval(POLL_TIMER!)
-      POLL_TIMER = null
+    if (TMap) {
+      tryPrototypePatch(TMap, toolManager)
     }
   }, 200)
 }
@@ -74,10 +67,7 @@ function tryPrototypePatch(TMap: any, toolManager: ToolManager): boolean {
   }
 
   const proto = TMap.Map.prototype
-  if (proto[ALREADY_PATCHED]) {
-    log('prototype already patched')
-    return true
-  }
+  if (proto[ALREADY_PATCHED]) return true
 
   log('patching TMap.Map.prototype, methods to hook:', CAPTURE_METHODS)
 
