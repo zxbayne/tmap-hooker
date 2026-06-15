@@ -14,6 +14,7 @@
           { 'layer-hidden': !layer.visible },
         ]"
         draggable="true"
+        @click.stop="$emit('selectLayer', layer.id)"
         @dragstart="onDragStart($event, layer.id)"
         @dragover.prevent="onDragOver($event, layer.id)"
         @dragleave="onDragLeave($event)"

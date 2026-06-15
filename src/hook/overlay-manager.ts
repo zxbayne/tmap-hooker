@@ -620,6 +620,7 @@ export class OverlayManager {
     const path = points.map((p) => new this.TMap.LatLng(p.lat, p.lng))
     const styleId = this.highlightedMeasureId === id ? 'highlight' : 'default'
     const isUpdate = this.measures.has(id)
+    const oldPoints = isUpdate ? this.measures.get(id)! : null
 
     // 折线：所有点连成一条
     const lineGeo = { id, styleId, paths: [path] }
@@ -639,10 +640,9 @@ export class OverlayManager {
       position: new this.TMap.LatLng(p.lat, p.lng),
     }))
     if (this.measureMarkerLayer) {
-      if (isUpdate) {
-        // 更新：先移除旧标记再添加新标记
-        const pointsArr = this.measures.get(id)!
-        const oldIds = pointsArr.map((_p: LatLng, i: number) => `${id}-v-${i}`)
+      if (isUpdate && oldPoints) {
+        // 移除旧的顶点标记（按旧的顶点数）
+        const oldIds = oldPoints.map((_p: LatLng, i: number) => `${id}-v-${i}`)
         this.measureMarkerLayer.remove(oldIds)
       }
       this.measureMarkerLayer.add(markerGeos)
