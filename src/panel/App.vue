@@ -92,6 +92,7 @@
       @delete-layer="onLayerDelete"
       @rename-layer="onLayerRename"
       @reorder="reorderLayers"
+      @edit-layer="startEditMeasure"
     />
 
     <!-- 操作按钮栏（多边形工具激活时隐藏） -->
@@ -174,6 +175,9 @@ const {
   toggleMeasureVisible,
   renameMeasure,
   reorderLayers,
+  startEditMeasure,
+  commitEditMeasure,
+  cancelEditMeasure,
 } = useTool()
 
 // ── 统一图层事件分发 ─────────────────────────────────────────────────────────

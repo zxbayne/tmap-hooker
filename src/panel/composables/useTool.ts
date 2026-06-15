@@ -3,6 +3,7 @@ import { HookEvent, PanelCmd } from '@shared/protocol'
 import type { HookMessage, SegmentAddedPayload, MeasureDrawnPayload, LayerKind } from '@shared/protocol'
 import { useMapBridge } from './useMapBridge'
 import { formatDistance } from '@shared/utils/distance'
+import { TOOL_IDS } from '@shared/tool-config'
 
 export interface SegmentInfo {
   from: number
@@ -527,6 +528,33 @@ export function useTool() {
     layerOrder.value = newOrder
   }
 
+  /** 开始编辑测距：发送完整数据给 hook 以便切换到多点工具编辑模式。 */
+  function startEditMeasure(id: string) {
+    const m = measureLayers.value.find(m => m.id === id)
+    if (!m || m.paths.length === 0) return
+    // 本地切换到测距工具状态（显示"完成"/"撤销"按钮）
+    activeTool.value = TOOL_IDS.MULTI_POINT
+    sendCmd({
+      type: PanelCmd.START_EDIT_MEASURE,
+      payload: {
+        id,
+        name: m.name,
+        points: m.paths[0],
+        segmentDistances: m.segmentDistances,
+      },
+    })
+  }
+
+  /** 提交测距编辑。 */
+  function commitEditMeasure() {
+    sendCmd({ type: PanelCmd.COMMIT_EDIT_MEASURE })
+  }
+
+  /** 取消测距编辑。 */
+  function cancelEditMeasure() {
+    sendCmd({ type: PanelCmd.CANCEL_EDIT_MEASURE })
+  }
+
   function setDebug(enabled: boolean) {
     sendCmd({ type: PanelCmd.SET_DEBUG, payload: { enabled } })
   }
@@ -590,6 +618,9 @@ export function useTool() {
     toggleMeasureVisible,
     renameMeasure,
     reorderLayers,
+    startEditMeasure,
+    commitEditMeasure,
+    cancelEditMeasure,
     setDebug,
   }
 }

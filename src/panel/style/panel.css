@@ -1069,3 +1069,11 @@
 .layer-del-btn:hover {
   color: var(--c-danger);
 }
+
+.layer-edit-btn {
+  font-size: 12px;
+}
+
+.layer-edit-btn:hover {
+  color: var(--c-accent);
+}

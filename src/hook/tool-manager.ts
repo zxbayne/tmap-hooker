@@ -5,6 +5,7 @@ import { PolygonTool } from './tools/polygon'
 import { PointMarkerTool } from './tools/point-marker'
 import { sendToPanel, HookEvent } from '@shared/protocol'
 import type { OverlaySnapshotItem } from '@shared/protocol'
+import type { LatLng } from '@shared/utils/parse-coords'
 import { TOOL_IDS } from '@shared/tool-config'
 import { log } from './logger'
 import type { ITool, ToolContext } from './tools/types'
@@ -309,6 +310,31 @@ export class ToolManager {
   /** 重命名测距图层——hook 侧无需处理，名称仅存在于 panel。 */
   renameMeasure(_id: string, _name: string): void {
     // no-op: name is panel-side only
+  }
+
+  /** 开始编辑测距：切换到多点工具并加载已有数据。 */
+  startEditMeasure(id: string, name: string, points: LatLng[], segDists: number[]): void {
+    const tool = this.tools.get(TOOL_IDS.MULTI_POINT) as MultiPointTool
+    if (!tool || !this.map || !this.overlays) return
+
+    // 停用当前工具
+    if (this.activeTool && this.activeTool !== tool) {
+      this.activeTool.deactivate()
+    }
+
+    const ctx: ToolContext = { map: this.map, overlays: this.overlays }
+    tool.loadForEdit(ctx, id, name, points, segDists)
+    this.activeTool = tool
+  }
+
+  /** 提交测距编辑：触发 finish 重建持久图层。 */
+  commitEditMeasure(): void {
+    this.activeTool?.finish?.()
+  }
+
+  /** 取消测距编辑：MultiPointTool 内部 onKeydown(Escape) 自行恢复。 */
+  cancelEditMeasure(): void {
+    // 由 MultiPointTool.onKeydown(Escape) 自行处理
   }
 
   // ── General tool commands ─────────────────────────────────────────────────

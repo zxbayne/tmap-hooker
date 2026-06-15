@@ -130,9 +130,18 @@ window.addEventListener('message', (event: MessageEvent) => {
     case PanelCmd.RENAME_MEASURE:
       toolManager.renameMeasure(msg.payload.id, msg.payload.name)
       break
-    // 测距编辑暂由 hook 层内部处理，不通过 panel 命令触发
+    // 测距编辑命令
     case PanelCmd.START_EDIT_MEASURE:
+      toolManager.startEditMeasure(
+        msg.payload.id,
+        msg.payload.name,
+        msg.payload.points,
+        msg.payload.segmentDistances,
+      )
+      break
     case PanelCmd.COMMIT_EDIT_MEASURE:
+      toolManager.commitEditMeasure()
+      break
     case PanelCmd.CANCEL_EDIT_MEASURE:
     case PanelCmd.UPDATE_MEASURE_VERTEX:
       break

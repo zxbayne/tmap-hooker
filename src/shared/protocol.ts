@@ -396,6 +396,11 @@ export interface DeleteMeasurePayload {
 /** 测距编辑启动。 */
 export interface StartEditMeasurePayload {
   id: string
+  name: string
+  /** 测距所有顶点坐标。 */
+  points: LatLng[]
+  /** 每段距离（米），与 points 的相邻段一一对应。 */
+  segmentDistances: number[]
 }
 
 // ── 消息联合类型（用于 TypeScript 类型收窄） ────────────────────────────────

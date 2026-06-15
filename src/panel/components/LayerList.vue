@@ -52,6 +52,14 @@
           @click.stop="$emit('toggleVisible', layer.id)"
         >{{ layer.visible ? '👁' : '━' }}</button>
 
+        <!-- 编辑（仅测距支持） -->
+        <button
+          v-if="layer.kind === 'measure'"
+          class="layer-btn layer-edit-btn"
+          title="编辑"
+          @click.stop="$emit('editLayer', layer.id)"
+        >✎</button>
+
         <!-- 删除 -->
         <button
           class="layer-btn layer-del-btn"
@@ -77,6 +85,7 @@ const emit = defineEmits<{
   deleteLayer: [id: string]
   renameLayer: [id: string, name: string]
   reorder: [ids: string[]]
+  editLayer: [id: string]
 }>()
 
 const editingId = ref<string | null>(null)
