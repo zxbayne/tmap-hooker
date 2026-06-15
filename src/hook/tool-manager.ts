@@ -30,7 +30,6 @@ export class ToolManager {
     if (this.map === map) return
     log('ToolManager.onMapReady — new map instance captured', map)
 
-    // 替换旧实例时（SPA 切回），先停用旧工具
     if (this.map && this.activeTool) {
       this.activeTool.deactivate()
       this.activeTool = null
@@ -41,6 +40,11 @@ export class ToolManager {
     this.overlays = new OverlayManager(map, TMap)
     sendToPanel({ type: HookEvent.MAP_READY })
     log('MAP_READY sent to panel')
+  }
+
+  /** 供 map-bridge 的 wrapper 判断实例是否已被捕获，避免重复触发。 */
+  isMapCaptured(instance: any): boolean {
+    return this.map === instance && this.map !== null
   }
 
   replayMapReady(): void {
