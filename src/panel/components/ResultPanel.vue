@@ -25,6 +25,13 @@
       @finish-edit="emit('finishEdit')"
       @cancel-edit="emit('cancelEdit')"
     />
+    <CirclePanel
+      v-else-if="activeTool === TOOL_IDS.CIRCLE"
+      :circle-preview="circlePreview"
+      :preview-geometry="circlePreviewGeometry"
+      @update-circle="(id, r, n) => emit('updateCircle', id, r, n)"
+      @finish-circle="emit('finishCircle')"
+    />
     <PointPanel
       v-else-if="activeTool === TOOL_IDS.POINT_MARKER"
       :point-markers="pointMarkers"
@@ -41,8 +48,10 @@
 import { computed } from 'vue'
 import { TOOL_IDS } from '@shared/tool-config'
 import type { SegmentInfo, PolygonLayer, PointMarkerItem } from '../composables/useTool'
+import type { CirclePreview, CircleGeometry } from './tools/CirclePanel.vue'
 import MultiPointResult from './tools/MultiPointResult.vue'
 import PolygonPanel from './tools/PolygonPanel.vue'
+import CirclePanel from './tools/CirclePanel.vue'
 import PointPanel from './tools/PointPanel.vue'
 
 const props = defineProps<{
@@ -57,6 +66,9 @@ const props = defineProps<{
   editingPolygonId: string | null
   // point marker
   pointMarkers: PointMarkerItem[]
+  // circle
+  circlePreview: CirclePreview | null
+  circlePreviewGeometry: CircleGeometry | null
 }>()
 
 const emit = defineEmits<{
@@ -72,6 +84,9 @@ const emit = defineEmits<{
   startEdit: [id: string]
   finishEdit: []
   cancelEdit: []
+  // circle
+  updateCircle: [id: string, radius: number, nPoints: number]
+  finishCircle: []
   // point marker
   deletePoint: [id: string]
   renamePoint: [id: string, name: string]

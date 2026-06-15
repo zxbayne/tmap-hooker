@@ -35,7 +35,7 @@
     </div>
 
     <!-- 设置下拉面板 -->
-    <Settings v-if="showSettings" @debug-change="setDebug" />
+    <Settings v-if="showSettings" @debug-change="setDebug" @theme-change="onThemeChange" />
 
     <!-- 工具选择栏 -->
     <ToolBar
@@ -55,6 +55,8 @@
       :polygon-layers="polygonLayers"
       :editing-polygon-id="editingPolygonId"
       :point-markers="pointMarkers"
+      :circle-preview="circlePreview"
+      :circle-preview-geometry="circlePreviewGeometry"
       @start-drawing="startDrawingPolygon"
       @finish-drawing="finishDrawingPolygon"
       @cancel-drawing="cancelDrawingPolygon"
@@ -67,6 +69,8 @@
       @start-edit="(id) => startEditPolygon(id)"
       @finish-edit="finishEditPolygon"
       @cancel-edit="cancelEditPolygon"
+      @update-circle="(id, r, n) => updateCircle(id, r, n)"
+      @finish-circle="finishCircle"
       @delete-point="(id) => deletePointMarker(id)"
       @rename-point="(id, name) => renamePointMarker(id, name)"
       @toggle-point-visible="(id) => togglePointMarkerVisible(id)"
@@ -94,6 +98,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useTool } from './composables/useTool'
+import { THEME_KEY, HOST_ID } from '@shared/constants'
 import ToolBar from './components/ToolBar.vue'
 import ResultPanel from './components/ResultPanel.vue'
 import ActionBar from './components/ActionBar.vue'
@@ -132,8 +137,12 @@ const {
   togglePointMarkerVisible,
   renamePointMarker,
   importPointMarkers,
+  updateCircle,
+  finishCircle,
   setDebug,
   mouseCoords,
+  circlePreview,
+  circlePreviewGeometry,
 } = useTool()
 
 // ── 折叠/展开状态 ─────────────────────────────────────────────────────────────
@@ -227,13 +236,84 @@ function onResize() {
   posY.value = Math.max(0, Math.min(window.innerHeight - 100, posY.value))
 }
 
-onMounted(() => {
+// ── 主题管理 ──────────────────────────────────────────────────────────────────
+const themePref = ref<'system' | 'light' | 'dark'>('system')
+/** 系统级暗色模式媒体查询，供 "跟随系统" 模式使用。 */
+const systemDark = window.matchMedia('(prefers-color-scheme: dark)')
+
+/** 当前生效的主题（解析 'system' 后的实际值）。 */
+const effectiveTheme = computed<'light' | 'dark'>(() => {
+  if (themePref.value === 'system') return systemDark.matches ? 'dark' : 'light'
+  return themePref.value
+})
+
+/** 将主题 class 应用到 Shadow 宿主元素（:host 选择器需要类在宿主上）。 */
+function applyTheme() {
+  const host = document.getElementById(HOST_ID)
+  if (!host) return
+  // 直接读 systemDark.matches，不依赖 computed（computed 缓存了旧值）
+  const isDark = themePref.value === 'system'
+    ? systemDark.matches
+    : themePref.value === 'dark'
+  host.classList.toggle('theme-light', !isDark)
+  host.classList.toggle('theme-dark', isDark)
+}
+
+/** 从 chrome.storage 加载主题（首次读 localStorage 做迁移），异步初始化。 */
+async function loadTheme() {
+  try {
+    const result = await chrome.storage.local.get(THEME_KEY)
+    const stored = result[THEME_KEY]
+    if (stored === 'system' || stored === 'light' || stored === 'dark') {
+      themePref.value = stored
+    }
+  } catch {
+    // chrome.storage 不可用时尝试 localStorage 迁移
+    const local = localStorage.getItem(THEME_KEY)
+    if (local === 'system' || local === 'light' || local === 'dark') {
+      themePref.value = local
+    }
+  }
+  applyTheme()
+}
+
+/** 监听系统主题变化（仅 "跟随系统" 模式需要）。 */
+function onSystemThemeChange() {
+  if (themePref.value === 'system') applyTheme()
+}
+
+/** 跨上下文同步：popup/panel 任一方改主题，另一方实时跟随。 */
+function onStorageChanged(changes: Record<string, chrome.storage.StorageChange>, area: string) {
+  if (area !== 'local') return
+  const c = changes[THEME_KEY]
+  if (!c) return
+  const v = c.newValue
+  if (v === 'system' || v === 'light' || v === 'dark') {
+    themePref.value = v
+    applyTheme()
+  }
+}
+
+function onThemeChange(theme: 'system' | 'light' | 'dark') {
+  themePref.value = theme
+  chrome.storage.local.set({ [THEME_KEY]: theme }).catch(() => {
+    localStorage.setItem(THEME_KEY, theme)
+  })
+  applyTheme()
+}
+
+onMounted(async () => {
+  await loadTheme()
+  systemDark.addEventListener('change', onSystemThemeChange)
+  chrome.storage.onChanged.addListener(onStorageChanged)
   document.addEventListener('mousemove', onMouseMove)
   document.addEventListener('mouseup', onMouseUp)
   window.addEventListener('resize', onResize)
 })
 
 onUnmounted(() => {
+  systemDark.removeEventListener('change', onSystemThemeChange)
+  chrome.storage.onChanged.removeListener(onStorageChanged)
   document.removeEventListener('mousemove', onMouseMove)
   document.removeEventListener('mouseup', onMouseUp)
   window.removeEventListener('resize', onResize)

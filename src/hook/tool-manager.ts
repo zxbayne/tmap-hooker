@@ -1,5 +1,6 @@
 import { OverlayManager } from './overlay-manager'
 import { MultiPointTool } from './tools/multi-point'
+import { CircleTool } from './tools/circle'
 import { PolygonTool } from './tools/polygon'
 import { PointMarkerTool } from './tools/point-marker'
 import { sendToPanel, HookEvent } from '@shared/protocol'
@@ -23,6 +24,7 @@ export class ToolManager {
 
   constructor() {
     this.register(new MultiPointTool())
+    this.register(new CircleTool())
     this.register(new PolygonTool())
     this.register(new PointMarkerTool())
   }
@@ -152,7 +154,7 @@ export class ToolManager {
 
     if (this.activeTool) {
       this.activeTool.deactivate()
-      const persistentTools = new Set([TOOL_IDS.POLYGON, TOOL_IDS.POINT_MARKER])
+      const persistentTools = new Set([TOOL_IDS.POLYGON, TOOL_IDS.POINT_MARKER, TOOL_IDS.CIRCLE])
       if (!persistentTools.has(this.activeTool.id as any)) {
         this.overlays.clearMeasurement()
       }
@@ -250,6 +252,20 @@ export class ToolManager {
 
   importPointMarkers(input: string): void {
     this._pointMarker()?.importFromInput(input)
+  }
+
+  // ── Circle tool commands ──────────────────────────────────────────────────
+
+  private _circle(): CircleTool | null {
+    return this.activeTool instanceof CircleTool ? this.activeTool : null
+  }
+
+  updateCircle(id: string, radius: number, nPoints: number): void {
+    this._circle()?.updateCircle(id, radius, nPoints)
+  }
+
+  finishCircle(): void {
+    this._circle()?.finishCircle()
   }
 
   // ── General tool commands ─────────────────────────────────────────────────

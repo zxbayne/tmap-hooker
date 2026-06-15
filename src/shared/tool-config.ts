@@ -13,6 +13,12 @@ export const TOOL_CONFIGS: ToolConfig[] = [
     description: '连续点击测量折线总距离',
   },
   {
+    id: 'circle',
+    name: '圆形',
+    icon: '⭕',
+    description: '点击圆心，自定义半径画圆',
+  },
+  {
     id: 'polygon',
     name: '绘制多边形',
     icon: '⬡',
@@ -28,6 +34,7 @@ export const TOOL_CONFIGS: ToolConfig[] = [
 
 export const TOOL_IDS = {
   MULTI_POINT: 'multi-point',
+  CIRCLE: 'circle',
   POLYGON: 'polygon',
   POINT_MARKER: 'point-marker',
 } as const

@@ -39,6 +39,9 @@ export const enum HookEvent {
   POLYGON_GEOMETRY = 'POLYGON_GEOMETRY',
   // 鼠标坐标实时推送
   MOUSE_MOVE = 'MOUSE_MOVE',
+  // 圆形工具事件
+  CIRCLE_CENTER_SET = 'CIRCLE_CENTER_SET',
+  CIRCLE_UPDATED = 'CIRCLE_UPDATED',
 }
 
 // Panel → Hook 命令：panel 层用户操作时发送给 hook
@@ -67,6 +70,9 @@ export const enum PanelCmd {
   TOGGLE_POINT_MARKER_VISIBLE = 'TOGGLE_POINT_MARKER_VISIBLE',
   RENAME_POINT_MARKER = 'RENAME_POINT_MARKER',
   IMPORT_POINT_MARKERS = 'IMPORT_POINT_MARKERS',
+  // 圆形工具命令
+  UPDATE_CIRCLE = 'UPDATE_CIRCLE',
+  FINISH_CIRCLE = 'FINISH_CIRCLE',
 }
 
 // ── Hook → Panel payload 类型 ────────────────────────────────────────────────
@@ -191,6 +197,26 @@ export interface MouseMovePayload {
   lng: number
 }
 
+/** 圆形工具：圆心已放置。 */
+export interface CircleCenterSetPayload {
+  id: string
+  lat: number
+  lng: number
+  /** 默认半径（米）。 */
+  radius: number
+  /** 默认拟合点数。 */
+  nPoints: number
+}
+
+/** 圆形工具：半径/点数变更后回传最新几何信息。 */
+export interface CircleUpdatedPayload {
+  id: string
+  radius: number
+  nPoints: number
+  area: number
+  perimeter: number
+}
+
 // ── Panel → Hook payload 类型 ────────────────────────────────────────────────
 
 /** 切换工具的命令，toolId 为空字符串时表示取消激活。 */
@@ -256,6 +282,13 @@ export interface ImportPointMarkersPayload {
   input: string
 }
 
+/** 更新圆形参数（半径或拟合点数）。 */
+export interface UpdateCirclePayload {
+  id: string
+  radius: number
+  nPoints: number
+}
+
 // ── 消息联合类型（用于 TypeScript 类型收窄） ────────────────────────────────
 
 /**
@@ -285,6 +318,8 @@ export type HookMessage =
   | { source: typeof HOOK_SOURCE; type: HookEvent.MAP_RESTORED; payload: MapRestoredPayload }
   | { source: typeof HOOK_SOURCE; type: HookEvent.POLYGON_GEOMETRY; payload: PolygonGeometryPayload }
   | { source: typeof HOOK_SOURCE; type: HookEvent.MOUSE_MOVE; payload: MouseMovePayload }
+  | { source: typeof HOOK_SOURCE; type: HookEvent.CIRCLE_CENTER_SET; payload: CircleCenterSetPayload }
+  | { source: typeof HOOK_SOURCE; type: HookEvent.CIRCLE_UPDATED; payload: CircleUpdatedPayload }
 
 export type PanelMessage =
   | { source: typeof PANEL_SOURCE; type: PanelCmd.PANEL_READY }
@@ -309,6 +344,8 @@ export type PanelMessage =
   | { source: typeof PANEL_SOURCE; type: PanelCmd.TOGGLE_POINT_MARKER_VISIBLE; payload: TogglePointMarkerVisiblePayload }
   | { source: typeof PANEL_SOURCE; type: PanelCmd.RENAME_POINT_MARKER; payload: RenamePointMarkerPayload }
   | { source: typeof PANEL_SOURCE; type: PanelCmd.IMPORT_POINT_MARKERS; payload: ImportPointMarkersPayload }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.UPDATE_CIRCLE; payload: UpdateCirclePayload }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.FINISH_CIRCLE }
 
 /** 从 hook 层向 panel 层发送事件消息（自动附加 source 字段）。 */
 export function sendToPanel(msg: DistributiveOmit<HookMessage, 'source'>): void {

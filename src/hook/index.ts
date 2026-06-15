@@ -97,5 +97,11 @@ window.addEventListener('message', (event: MessageEvent) => {
     case PanelCmd.IMPORT_POINT_MARKERS:
       toolManager.importPointMarkers(msg.payload.input)
       break
+    case PanelCmd.UPDATE_CIRCLE:
+      toolManager.updateCircle(msg.payload.id, msg.payload.radius, msg.payload.nPoints)
+      break
+    case PanelCmd.FINISH_CIRCLE:
+      toolManager.finishCircle()
+      break
   }
 })

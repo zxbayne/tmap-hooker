@@ -60,6 +60,10 @@ export function useTool() {
   // 鼠标坐标实时显示
   const mouseCoords = ref<{ lat: number; lng: number } | null>(null)
 
+  // 圆形工具状态
+  const circlePreview = ref<{ id: string; lat: number; lng: number; radius: number; nPoints: number } | null>(null)
+  const circlePreviewGeometry = ref<{ area: number; perimeter: number } | null>(null)
+
   const totalLabel = computed(() => (totalM.value > 0 ? formatDistance(totalM.value) : ''))
   const isMeasuring = computed(() => activeTool.value !== '')
 
@@ -195,6 +199,28 @@ export function useTool() {
       case HookEvent.MOUSE_MOVE:
         mouseCoords.value = { lat: msg.payload.lat, lng: msg.payload.lng }
         break
+
+      case HookEvent.CIRCLE_CENTER_SET:
+        circlePreview.value = {
+          id: msg.payload.id,
+          lat: msg.payload.lat,
+          lng: msg.payload.lng,
+          radius: msg.payload.radius,
+          nPoints: msg.payload.nPoints,
+        }
+        circlePreviewGeometry.value = null
+        break
+
+      case HookEvent.CIRCLE_UPDATED:
+        if (circlePreview.value && circlePreview.value.id === msg.payload.id) {
+          circlePreview.value.radius = msg.payload.radius
+          circlePreview.value.nPoints = msg.payload.nPoints
+          circlePreviewGeometry.value = {
+            area: msg.payload.area,
+            perimeter: msg.payload.perimeter,
+          }
+        }
+        break
     }
   })
 
@@ -204,6 +230,10 @@ export function useTool() {
     segments.value = []
     totalM.value = 0
     pointCount.value = 0
+    if (next !== 'circle') {
+      circlePreview.value = null
+      circlePreviewGeometry.value = null
+    }
     if (next !== 'polygon') {
       polygonMode.value = 'idle'
       drawingPointCount.value = 0
@@ -233,6 +263,8 @@ export function useTool() {
     polygonNameCounter = 0
     pointMarkers.value = []
     pointNameCounter = 0
+    circlePreview.value = null
+    circlePreviewGeometry.value = null
     sendCmd({ type: PanelCmd.CLEAR })
   }
 
@@ -334,6 +366,18 @@ export function useTool() {
     sendCmd({ type: PanelCmd.IMPORT_POINT_MARKERS, payload: { input } })
   }
 
+  // ── Circle commands ────────────────────────────────────────────────────────
+
+  function updateCircle(id: string, radius: number, nPoints: number) {
+    sendCmd({ type: PanelCmd.UPDATE_CIRCLE, payload: { id, radius, nPoints } })
+  }
+
+  function finishCircle() {
+    sendCmd({ type: PanelCmd.FINISH_CIRCLE })
+    circlePreview.value = null
+    circlePreviewGeometry.value = null
+  }
+
   function setDebug(enabled: boolean) {
     sendCmd({ type: PanelCmd.SET_DEBUG, payload: { enabled } })
   }
@@ -355,6 +399,9 @@ export function useTool() {
     pointMarkers,
     // mouse coords
     mouseCoords,
+    // circle
+    circlePreview,
+    circlePreviewGeometry,
     // commands
     setTool,
     finish,
@@ -377,6 +424,8 @@ export function useTool() {
     togglePointMarkerVisible,
     renamePointMarker,
     importPointMarkers,
+    updateCircle,
+    finishCircle,
     setDebug,
   }
 }
