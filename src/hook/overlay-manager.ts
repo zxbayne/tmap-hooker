@@ -1,4 +1,5 @@
 import type { LatLng } from '@shared/utils/parse-coords'
+import type { OverlaySnapshotItem } from '@shared/protocol'
 
 /**
  * 管理地图上所有覆盖物图层（标记、折线、标签、多边形、橡皮筋线）。
@@ -589,6 +590,82 @@ export class OverlayManager {
    */
   clearMeasurement(): void {
     this._destroyMeasurementLayers()
+  }
+
+  // ── Snapshot / Restore ────────────────────────────────────────────────────
+
+  /**
+   * 导出所有持久覆盖物数据为可序列化快照。
+   * 用于 SPA 页面切换前保存数据，切换后通过 restoreSnapshot() 恢复。
+   */
+  snapshot(): OverlaySnapshotItem {
+    return {
+      polygons: Array.from(this.polygons.entries()).map(([id, paths]) => ({
+        id,
+        points: (paths[0] ?? []).map((p: any) => ({ lat: p.lat, lng: p.lng })),
+        visible: this.polygonVisible.get(id) ?? true,
+      })),
+      pointMarkers: Array.from(this.pointMarkers.entries()).map(([id, latlng]) => ({
+        id,
+        lat: latlng.lat,
+        lng: latlng.lng,
+        name: this.pointMarkerNames.get(id) ?? '',
+        visible: this.pointMarkerVisible.get(id) ?? true,
+      })),
+    }
+  }
+
+  /**
+   * 从快照恢复所有持久覆盖物数据到当前地图。
+   * 直接操作底层图层，不依赖工具回调——适合在工具未激活时批量重建。
+   */
+  restore(
+    data: OverlaySnapshotItem,
+    polygonClickCb: (id: string) => void,
+    polygonMousedownCb?: (id: string, latLng: any) => void,
+  ): void {
+    // 恢复多边形
+    if (data.polygons.length > 0) {
+      this.ensurePolygonLayer(polygonClickCb, polygonMousedownCb)
+      const geos = data.polygons.map((poly) => {
+        const path = this._closedPath(poly.points)
+        this.polygons.set(poly.id, [path])
+        this.polygonVisible.set(poly.id, poly.visible)
+        return { id: poly.id, styleId: poly.visible ? 'default' : 'hidden', paths: [path] }
+      })
+      this.polygonLayer.add(geos)
+    }
+    // 恢复点位（按 id 排序确保 counter 逻辑一致）
+    if (data.pointMarkers.length > 0) {
+      this.ensurePointMarkerLayer()
+      this.ensurePointLabelLayer()
+      const sorted = [...data.pointMarkers].sort((a, b) => a.id.localeCompare(b.id))
+      const markerGeos: any[] = []
+      const labelGeos: any[] = []
+      for (const pm of sorted) {
+        const pos = new this.TMap.LatLng(pm.lat, pm.lng)
+        const styleId = pm.visible ? 'default' : 'hidden'
+        this.pointMarkers.set(pm.id, { lat: pm.lat, lng: pm.lng })
+        this.pointMarkerNames.set(pm.id, pm.name)
+        this.pointMarkerVisible.set(pm.id, pm.visible)
+        markerGeos.push({ id: pm.id, styleId, position: pos })
+        labelGeos.push({ id: pm.id, styleId, position: pos, content: pm.name })
+      }
+      this.pointMarkerLayer.add(markerGeos)
+      this.pointLabelLayer.add(labelGeos)
+    }
+  }
+
+  /** 从地图移除所有图层（不清除数据），用于地图实例销毁前的清理。 */
+  detachFromMap(): void {
+    const layers: any[] = [
+      this.markerLayer, this.polylineLayer, this.labelLayer,
+      this.polygonLayer, this.rubberBandLayer,
+      this.pointMarkerLayer, this.pointLabelLayer,
+    ]
+    for (const layer of layers) {
+      if (layer) layer.setMap(null)
+    }
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────

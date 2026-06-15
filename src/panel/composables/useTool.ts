@@ -34,6 +34,7 @@ export function useTool() {
   const { onHookEvent, sendCmd } = useMapBridge()
 
   const isMapReady = ref(false)
+  const mapStatus = ref<'init' | 'ready' | 'lost' | 'restored'>('init')
   const activeTool = ref<string>('')
   const segments = ref<SegmentInfo[]>([])
   const totalM = ref(0)
@@ -60,6 +61,19 @@ export function useTool() {
     switch (msg.type) {
       case HookEvent.MAP_READY:
         isMapReady.value = true
+        mapStatus.value = 'ready'
+        break
+
+      case HookEvent.MAP_LOST:
+        isMapReady.value = false
+        mapStatus.value = 'lost'
+        break
+
+      case HookEvent.MAP_RESTORED:
+        isMapReady.value = true
+        mapStatus.value = 'restored'
+        // 2 秒后恢复为 ready 状态
+        setTimeout(() => { if (mapStatus.value === 'restored') mapStatus.value = 'ready' }, 2000)
         break
 
       case HookEvent.POINT_ADDED:
@@ -315,6 +329,7 @@ export function useTool() {
 
   return {
     isMapReady,
+    mapStatus,
     activeTool,
     segments,
     totalLabel,

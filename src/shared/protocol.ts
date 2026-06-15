@@ -32,6 +32,9 @@ export const enum HookEvent {
   // 打点标记工具事件
   POINT_MARKER_ADDED = 'POINT_MARKER_ADDED',
   POINT_MARKER_DELETED = 'POINT_MARKER_DELETED',
+  // 地图生命周期事件
+  MAP_LOST = 'MAP_LOST',
+  MAP_RESTORED = 'MAP_RESTORED',
 }
 
 // Panel → Hook 命令：panel 层用户操作时发送给 hook
@@ -157,6 +160,18 @@ export interface PointMarkerDeletedPayload {
   id: string
 }
 
+/** overlay 快照：保存所有地图覆盖物数据，用于 SPA 页面切换后的恢复。 */
+export interface OverlaySnapshotItem {
+  polygons: Array<{ id: string; points: LatLng[]; visible: boolean }>
+  pointMarkers: Array<{ id: string; lat: number; lng: number; name: string; visible: boolean }>
+}
+
+/** 地图恢复后发送，携带恢复的覆盖物数量。 */
+export interface MapRestoredPayload {
+  polygonCount: number
+  pointMarkerCount: number
+}
+
 // ── Panel → Hook payload 类型 ────────────────────────────────────────────────
 
 /** 切换工具的命令，toolId 为空字符串时表示取消激活。 */
@@ -247,6 +262,8 @@ export type HookMessage =
   | { source: typeof HOOK_SOURCE; type: HookEvent.POLYGON_EDIT_CANCELLED; payload: PolygonEditCancelledPayload }
   | { source: typeof HOOK_SOURCE; type: HookEvent.POINT_MARKER_ADDED; payload: PointMarkerAddedPayload }
   | { source: typeof HOOK_SOURCE; type: HookEvent.POINT_MARKER_DELETED; payload: PointMarkerDeletedPayload }
+  | { source: typeof HOOK_SOURCE; type: HookEvent.MAP_LOST }
+  | { source: typeof HOOK_SOURCE; type: HookEvent.MAP_RESTORED; payload: MapRestoredPayload }
 
 export type PanelMessage =
   | { source: typeof PANEL_SOURCE; type: PanelCmd.PANEL_READY }

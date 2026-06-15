@@ -47,6 +47,16 @@ export class PolygonTool implements ITool {
 
   // ── ITool interface ───────────────────────────────────────────────────────
 
+  /** 供 OverlayManager.restore() 使用的多边形点击回调。 */
+  getClickHandler(): (id: string) => void {
+    return (id) => this._onPolygonClick(id)
+  }
+
+  /** 供 OverlayManager.restore() 使用的多边形 mousedown 回调。 */
+  getMousedownHandler(): (id: string, latLng: any) => void {
+    return (id, latLng) => this._onPolygonMousedown(id, latLng)
+  }
+
   activate(ctx: ToolContext): void {
     this.ctx = ctx
     this.mode = 'idle'

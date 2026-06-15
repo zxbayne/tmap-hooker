@@ -22,8 +22,8 @@
     <div class="panel-header" @mousedown.prevent="startDrag">
       <span class="panel-title">📍 TMap 工具</span>
       <div class="header-actions">
-        <span class="map-status" :class="{ ready: isMapReady }">
-          {{ isMapReady ? '已就绪' : '未检测' }}
+        <span class="map-status" :class="statusClass">
+          {{ statusText }}
         </span>
         <button class="icon-btn" :class="{ active: showSettings }" @click.stop="toggleSettings" title="设置">
           ⚙️
@@ -89,7 +89,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useTool } from './composables/useTool'
 import ToolBar from './components/ToolBar.vue'
 import ResultPanel from './components/ResultPanel.vue'
@@ -98,6 +98,7 @@ import Settings from './components/Settings.vue'
 
 const {
   isMapReady,
+  mapStatus,
   activeTool,
   segments,
   totalLabel,
@@ -136,6 +137,22 @@ const {
 const COLLAPSE_KEY = '__tmh_collapsed__'
 const MINI_Y_KEY = '__tmh_mini_y__'
 const isCollapsed = ref(localStorage.getItem(COLLAPSE_KEY) === 'true')
+
+// ── 地图状态指示器 ────────────────────────────────────────────────────────────
+const statusClass = computed(() => ({
+  ready: mapStatus.value === 'ready',
+  lost: mapStatus.value === 'lost',
+  restored: mapStatus.value === 'restored',
+}))
+
+const statusText = computed(() => {
+  switch (mapStatus.value) {
+    case 'ready': return '已就绪'
+    case 'lost': return '地图已断开'
+    case 'restored': return '已恢复'
+    default: return '未检测'
+  }
+})
 
 function collapse() {
   isCollapsed.value = true

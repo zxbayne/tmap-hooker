@@ -4,6 +4,7 @@ import { MultiPointTool } from './tools/multi-point'
 import { PolygonTool } from './tools/polygon'
 import { PointMarkerTool } from './tools/point-marker'
 import { sendToPanel, HookEvent } from '@shared/protocol'
+import type { OverlaySnapshotItem } from '@shared/protocol'
 import { TOOL_IDS } from '@shared/tool-config'
 import { log } from './logger'
 import type { ITool, ToolContext } from './tools/types'
@@ -14,6 +15,9 @@ export class ToolManager {
   private map: any = null
   private TMap: any = null
   private overlays: OverlayManager | null = null
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null
+  /** 上一个地图实例的覆盖物快照，用于 SPA 切换后恢复。 */
+  private pendingSnapshot: OverlaySnapshotItem | null = null
 
   constructor() {
     this.register(new TwoPointTool())
@@ -30,16 +34,96 @@ export class ToolManager {
     if (this.map === map) return
     log('ToolManager.onMapReady — new map instance captured', map)
 
-    if (this.map && this.activeTool) {
+    const isReconnect = this.map !== null
+
+    // 1. 保存旧覆盖物快照
+    if (this.overlays) {
+      this.pendingSnapshot = this.overlays.snapshot()
+      this.overlays.detachFromMap()
+      log('snapshot saved:', this.pendingSnapshot.polygons.length, 'polygons,', this.pendingSnapshot.pointMarkers.length, 'point markers')
+    }
+
+    // 2. 停用旧工具
+    const prevToolId = this.activeTool?.id ?? null
+    if (this.activeTool) {
       this.activeTool.deactivate()
       this.activeTool = null
     }
 
+    // 3. 替换地图实例
     this.map = map
     this.TMap = TMap
     this.overlays = new OverlayManager(map, TMap)
+
+    // 4. 恢复快照
+    let restoredPoly = 0
+    let restoredPm = 0
+    if (this.pendingSnapshot) {
+      const polygonTool = this.tools.get(TOOL_IDS.POLYGON) as PolygonTool
+      const clickCb = polygonTool?.getClickHandler() ?? (() => {})
+      const mdCb = polygonTool?.getMousedownHandler()
+      this.overlays.restore(this.pendingSnapshot, clickCb, mdCb)
+      restoredPoly = this.pendingSnapshot.polygons.length
+      restoredPm = this.pendingSnapshot.pointMarkers.length
+      this.pendingSnapshot = null
+      log('snapshot restored:', restoredPoly, 'polygons,', restoredPm, 'point markers')
+    }
+
+    // 5. 重新激活之前的工具
+    if (prevToolId) {
+      this.setTool(prevToolId)
+    }
+
+    // 6. 启动心跳
+    this.startHeartbeat()
+
+    // 7. 通知 panel
+    if (isReconnect) {
+      sendToPanel({ type: HookEvent.MAP_RESTORED, payload: { polygonCount: restoredPoly, pointMarkerCount: restoredPm } })
+    }
     sendToPanel({ type: HookEvent.MAP_READY })
-    log('MAP_READY sent to panel')
+    log('MAP_READY sent to panel' + (isReconnect ? ' (reconnect)' : ''))
+  }
+
+  /** 心跳检测到地图实例已销毁时调用。 */
+  onMapLost(): void {
+    log('ToolManager.onMapLost — map instance gone')
+    this.stopHeartbeat()
+    // 保存快照（如果还没存）
+    if (this.overlays && !this.pendingSnapshot) {
+      this.pendingSnapshot = this.overlays.snapshot()
+      log('snapshot saved on map lost:', this.pendingSnapshot.polygons.length, 'polygons')
+    }
+    // 清理图层引用
+    if (this.overlays) {
+      this.overlays.detachFromMap()
+    }
+    // 停用工具
+    if (this.activeTool) {
+      this.activeTool.deactivate()
+      this.activeTool = null
+    }
+    sendToPanel({ type: HookEvent.MAP_LOST })
+    log('MAP_LOST sent to panel')
+  }
+
+  private startHeartbeat(): void {
+    this.stopHeartbeat()
+    this.heartbeatTimer = setInterval(() => {
+      try {
+        this.map?.getCenter()
+      } catch {
+        log('heartbeat: map.getCenter() threw, assuming destroyed')
+        this.onMapLost()
+      }
+    }, 3000)
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeatTimer !== null) {
+      clearInterval(this.heartbeatTimer)
+      this.heartbeatTimer = null
+    }
   }
 
   /** 供 map-bridge 的 wrapper 判断实例是否已被捕获，避免重复触发。 */
