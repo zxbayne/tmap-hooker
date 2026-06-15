@@ -79,8 +79,19 @@ async function save() {
   setTimeout(() => { saved.value = false }, 2500)
 }
 
+function cleanDomain(input: string): string {
+  let d = input.trim().toLowerCase()
+  // 剔除协议（https:// 或 http://）
+  d = d.replace(/^https?:\/\//, '')
+  // 剔除路径（/ 之后的部分）和末尾斜杠
+  d = d.replace(/\/.*$/, '')
+  // 剔除端口（:8080 之类，hostname 匹配不需要端口）
+  d = d.replace(/:\d+$/, '')
+  return d
+}
+
 function addDomain() {
-  const d = newDomain.value.trim().toLowerCase()
+  const d = cleanDomain(newDomain.value)
   if (!d || whitelist.value.includes(d)) return
   whitelist.value.push(d)
   newDomain.value = ''
