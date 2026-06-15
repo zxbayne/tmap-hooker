@@ -55,23 +55,29 @@ export class ToolManager {
     this.TMap = TMap
     this.overlays = new OverlayManager(map, TMap)
 
-    // 4. 恢复快照
+    // 4. 恢复快照 — 延迟到下一事件循环，等待地图内部初始化完成。
+    //    map.on() 在构造器内触发时，图层管理器尚未就绪，立即 restore 会抛异常。
     let restoredPoly = 0
     let restoredPm = 0
     if (this.pendingSnapshot) {
+      const snap = this.pendingSnapshot
       const polygonTool = this.tools.get(TOOL_IDS.POLYGON) as PolygonTool
       const clickCb = polygonTool?.getClickHandler() ?? (() => {})
       const mdCb = polygonTool?.getMousedownHandler()
-      this.overlays.restore(this.pendingSnapshot, clickCb, mdCb)
-      restoredPoly = this.pendingSnapshot.polygons.length
-      restoredPm = this.pendingSnapshot.pointMarkers.length
+      restoredPoly = snap.polygons.length
+      restoredPm = snap.pointMarkers.length
       this.pendingSnapshot = null
-      log('snapshot restored:', restoredPoly, 'polygons,', restoredPm, 'point markers')
+      setTimeout(() => {
+        this.overlays!.restore(snap, clickCb, mdCb)
+        log('snapshot restored:', restoredPoly, 'polygons,', restoredPm, 'point markers')
+      }, 0)
     }
 
-    // 5. 重新激活之前的工具
+    // 5. 重新激活之前的工具（同样延迟，确保 overlays 已恢复）
     if (prevToolId) {
-      this.setTool(prevToolId)
+      setTimeout(() => {
+        this.setTool(prevToolId)
+      }, 0)
     }
 
     // 6. 启动心跳

@@ -188,11 +188,19 @@ export class OverlayManager {
     })
   }
 
-  private ensurePolygonLayer(onClickCb: (id: string) => void, onMousedownCb?: (id: string, latLng: any) => void) {
+  private ensurePolygonLayer(
+    onClickCb: (id: string) => void,
+    onMousedownCb?: (id: string, latLng: any) => void,
+    initialGeometries?: any[],
+  ) {
     if (this.polygonLayer) {
       if (onMousedownCb && !this.onPolygonMousedown) {
         this.onPolygonMousedown = onMousedownCb
         this._attachMousedownHandler()
+      }
+      // 已存在图层时，通过 add 追加初始几何体
+      if (initialGeometries && initialGeometries.length > 0) {
+        this.polygonLayer.add(initialGeometries)
       }
       return
     }
@@ -227,7 +235,7 @@ export class OverlayManager {
           borderDashArray: [0, 0],
         }),
       },
-      geometries: [],
+      geometries: initialGeometries ?? [],
     })
     this.onPolygonClick = onClickCb
     this.polygonLayer.on('click', (evt: any) => {
@@ -387,8 +395,13 @@ export class OverlayManager {
 
   // ── Point Markers (persistent) ───────────────────────────────────────────
 
-  private ensurePointMarkerLayer() {
-    if (this.pointMarkerLayer) return
+  private ensurePointMarkerLayer(initialGeometries?: any[]) {
+    if (this.pointMarkerLayer) {
+      if (initialGeometries && initialGeometries.length > 0) {
+        this.pointMarkerLayer.add(initialGeometries)
+      }
+      return
+    }
     this.pointMarkerLayer = new this.TMap.MultiMarker({
       id: 'tmap-hooker-point-markers',
       map: this.map,
@@ -412,13 +425,18 @@ export class OverlayManager {
           src: this._pinSvg('rgba(0,0,0,0)'),
         }),
       },
-      geometries: [],
+      geometries: initialGeometries ?? [],
     })
     this.pointMarkerLayer.setZIndex(9998)
   }
 
-  private ensurePointLabelLayer() {
-    if (this.pointLabelLayer) return
+  private ensurePointLabelLayer(initialGeometries?: any[]) {
+    if (this.pointLabelLayer) {
+      if (initialGeometries && initialGeometries.length > 0) {
+        this.pointLabelLayer.add(initialGeometries)
+      }
+      return
+    }
     this.pointLabelLayer = new this.TMap.MultiLabel({
       id: 'tmap-hooker-point-labels',
       map: this.map,
@@ -448,7 +466,7 @@ export class OverlayManager {
           offset: { x: 0, y: 0 },
         }),
       },
-      geometries: [],
+      geometries: initialGeometries ?? [],
     })
     this.pointLabelLayer.setZIndex(9997)
   }
@@ -624,21 +642,19 @@ export class OverlayManager {
     polygonClickCb: (id: string) => void,
     polygonMousedownCb?: (id: string, latLng: any) => void,
   ): void {
-    // 恢复多边形
+    // 恢复多边形——将几何体通过 initialGeometries 传入构造器，
+    // 避免地图未就绪时 add() 不渲染的问题。
     if (data.polygons.length > 0) {
-      this.ensurePolygonLayer(polygonClickCb, polygonMousedownCb)
       const geos = data.polygons.map((poly) => {
         const path = this._closedPath(poly.points)
         this.polygons.set(poly.id, [path])
         this.polygonVisible.set(poly.id, poly.visible)
         return { id: poly.id, styleId: poly.visible ? 'default' : 'hidden', paths: [path] }
       })
-      this.polygonLayer.add(geos)
+      this.ensurePolygonLayer(polygonClickCb, polygonMousedownCb, geos)
     }
-    // 恢复点位（按 id 排序确保 counter 逻辑一致）
+    // 恢复点位
     if (data.pointMarkers.length > 0) {
-      this.ensurePointMarkerLayer()
-      this.ensurePointLabelLayer()
       const sorted = [...data.pointMarkers].sort((a, b) => a.id.localeCompare(b.id))
       const markerGeos: any[] = []
       const labelGeos: any[] = []
@@ -651,8 +667,8 @@ export class OverlayManager {
         markerGeos.push({ id: pm.id, styleId, position: pos })
         labelGeos.push({ id: pm.id, styleId, position: pos, content: pm.name })
       }
-      this.pointMarkerLayer.add(markerGeos)
-      this.pointLabelLayer.add(labelGeos)
+      this.ensurePointMarkerLayer(markerGeos)
+      this.ensurePointLabelLayer(labelGeos)
     }
   }
 
