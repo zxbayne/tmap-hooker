@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue'
 import { HookEvent, PanelCmd } from '@shared/protocol'
-import type { HookMessage, SegmentAddedPayload } from '@shared/protocol'
+import type { HookMessage, SegmentAddedPayload, MeasureDrawnPayload, LayerKind } from '@shared/protocol'
 import { useMapBridge } from './useMapBridge'
 import { formatDistance } from '@shared/utils/distance'
 
@@ -34,6 +34,15 @@ export interface PointMarkerItem {
   lng: number
 }
 
+/** 统一图层条目（用于 LayerList 渲染）。 */
+export interface UnifiedLayer {
+  id: string
+  kind: LayerKind
+  name: string
+  visible: boolean
+  selected: boolean
+}
+
 export function useTool() {
   const { onHookEvent, sendCmd } = useMapBridge()
 
@@ -64,6 +73,48 @@ export function useTool() {
   const circleMode = ref<'idle' | 'drawing' | 'placed' | 'editing'>('idle')
   const circlePreview = ref<{ id: string; lat: number; lng: number; radius: number; nPoints: number } | null>(null)
   const circlePreviewGeometry = ref<{ area: number; perimeter: number } | null>(null)
+
+  // 测距图层状态
+  const measureLayers = ref<MeasureDrawnPayload[]>([])
+  /** 图层顺序：按 id 排列，新图层追加到末尾，拖拽后可重新排列。 */
+  const layerOrder = ref<string[]>([])
+
+  /** 统一图层列表（多来源聚合，按 layerOrder 排序）。 */
+  const unifiedLayers = computed<UnifiedLayer[]>(() => {
+    const layers: UnifiedLayer[] = []
+
+    for (const p of polygonLayers.value) {
+      layers.push({ id: p.id, kind: 'polygon', name: p.name, visible: p.visible, selected: p.selected })
+    }
+    for (const m of measureLayers.value) {
+      layers.push({ id: m.id, kind: 'measure', name: m.name, visible: m.visible, selected: m.selected })
+    }
+    for (const pm of pointMarkers.value) {
+      layers.push({ id: pm.id, kind: 'point-marker', name: pm.name, visible: pm.visible, selected: pm.selected })
+    }
+    // 圆形暂不加入统一列表，待后续版本统一
+    if (circlePreview.value && (circleMode.value === 'placed' || circleMode.value === 'editing')) {
+      layers.push({
+        id: circlePreview.value.id,
+        kind: 'circle',
+        name: `圆形 ${circlePreview.value.id.slice(-4)}`,
+        visible: true,
+        selected: circleMode.value === 'editing',
+      })
+    }
+
+    // 按 layerOrder 排序：order 中有序号的优先，未在 order 中的追加到末尾
+    const orderMap = new Map(layerOrder.value.map((id, i) => [id, i]))
+    layers.sort((a, b) => {
+      const ai = orderMap.get(a.id)
+      const bi = orderMap.get(b.id)
+      if (ai !== undefined && bi !== undefined) return ai - bi
+      if (ai !== undefined) return -1
+      if (bi !== undefined) return 1
+      return 0
+    })
+    return layers
+  })
 
   const totalLabel = computed(() => (totalM.value > 0 ? formatDistance(totalM.value) : ''))
   const isMeasuring = computed(() => activeTool.value !== '')
@@ -139,6 +190,7 @@ export function useTool() {
           area: null,
           perimeter: null,
         })
+        layerOrder.value.push(msg.payload.id)
         break
 
       case HookEvent.POLYGON_SELECTED: {
@@ -152,6 +204,7 @@ export function useTool() {
       case HookEvent.POLYGON_DELETED: {
         const idx = polygonLayers.value.findIndex((l) => l.id === msg.payload.id)
         if (idx !== -1) polygonLayers.value.splice(idx, 1)
+        layerOrder.value = layerOrder.value.filter(id => id !== msg.payload.id)
         break
       }
 
@@ -189,11 +242,13 @@ export function useTool() {
           lng: msg.payload.lng,
         })
         pointNameCounter++
+        layerOrder.value.push(msg.payload.id)
         break
 
       case HookEvent.POINT_MARKER_DELETED: {
         const idx = pointMarkers.value.findIndex((p) => p.id === msg.payload.id)
         if (idx !== -1) pointMarkers.value.splice(idx, 1)
+        layerOrder.value = layerOrder.value.filter(id => id !== msg.payload.id)
         break
       }
 
@@ -234,6 +289,26 @@ export function useTool() {
         circleMode.value = 'idle'
         circlePreview.value = null
         circlePreviewGeometry.value = null
+        break
+
+      case HookEvent.MEASURE_DRAWN: {
+        const payload = msg.payload as MeasureDrawnPayload
+        measureLayers.value.push({ ...payload })
+        // 追加到图层顺序末尾
+        layerOrder.value.push(payload.id)
+        break
+      }
+
+      case HookEvent.MEASURE_SELECTED: {
+        const selId = msg.payload.id
+        for (const m of measureLayers.value) m.selected = m.id === selId
+        break
+      }
+
+      case HookEvent.MEASURE_EDIT_STARTED:
+      case HookEvent.MEASURE_EDIT_COMMITTED:
+      case HookEvent.MEASURE_EDIT_CANCELLED:
+        // 编辑状态暂由 hook 层管理，panel 只做记录
         break
     }
   })
@@ -280,6 +355,8 @@ export function useTool() {
     pointNameCounter = 0
     circlePreview.value = null
     circlePreviewGeometry.value = null
+    measureLayers.value = []
+    layerOrder.value = []
     sendCmd({ type: PanelCmd.CLEAR })
   }
 
@@ -417,6 +494,39 @@ export function useTool() {
     sendCmd({ type: PanelCmd.CANCEL_EDIT_CIRCLE })
   }
 
+  // ── Measure commands ───────────────────────────────────────────────────────
+
+  function deleteMeasure(id: string) {
+    sendCmd({ type: PanelCmd.DELETE_MEASURE, payload: { id } })
+    // 本地立即移除
+    const idx = measureLayers.value.findIndex(m => m.id === id)
+    if (idx !== -1) measureLayers.value.splice(idx, 1)
+    layerOrder.value = layerOrder.value.filter(oid => oid !== id)
+  }
+
+  function selectMeasure(id: string) {
+    for (const m of measureLayers.value) m.selected = m.id === id
+    sendCmd({ type: PanelCmd.SELECT_MEASURE, payload: { id } })
+  }
+
+  function toggleMeasureVisible(id: string) {
+    const m = measureLayers.value.find(m => m.id === id)
+    if (!m) return
+    m.visible = !m.visible
+    sendCmd({ type: PanelCmd.TOGGLE_MEASURE_VISIBLE, payload: { id, visible: m.visible } })
+  }
+
+  function renameMeasure(id: string, name: string) {
+    const m = measureLayers.value.find(m => m.id === id)
+    if (m) m.name = name
+    sendCmd({ type: PanelCmd.RENAME_MEASURE, payload: { id, name } })
+  }
+
+  /** 拖拽排序后更新图层顺序。 */
+  function reorderLayers(newOrder: string[]) {
+    layerOrder.value = newOrder
+  }
+
   function setDebug(enabled: boolean) {
     sendCmd({ type: PanelCmd.SET_DEBUG, payload: { enabled } })
   }
@@ -442,6 +552,10 @@ export function useTool() {
     circleMode,
     circlePreview,
     circlePreviewGeometry,
+    // measure + unified layers
+    measureLayers,
+    unifiedLayers,
+    layerOrder,
     // commands
     setTool,
     finish,
@@ -471,6 +585,11 @@ export function useTool() {
     startEditCircle,
     commitEditCircle,
     cancelEditCircle,
+    deleteMeasure,
+    selectMeasure,
+    toggleMeasureVisible,
+    renameMeasure,
+    reorderLayers,
     setDebug,
   }
 }

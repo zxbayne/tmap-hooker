@@ -46,6 +46,22 @@ export class OverlayManager {
   /** 多边形 mousedown 回调，用于实现拖动。 */
   private onPolygonMousedown: ((id: string, latLng: any) => void) | null = null
 
+  // ── Measure layers (persistent) ────────────────────────────────────────────
+
+  /** 测距折线图层（线、距离标签、顶点标记）。 */
+  private measurePolylineLayer: any = null
+  private measureMarkerLayer: any = null
+  /** 每条测距的标签集（key=measureId, value=标签 MultiMarker 实例数组）。 */
+  private measureLabelMarkers: Map<string, any[]> = new Map()
+  /** 每条测距的顶点坐标（key=measureId）。 */
+  private measures: Map<string, LatLng[]> = new Map()
+  /** 每条测距的可见状态。 */
+  private measureVisible: Map<string, boolean> = new Map()
+  /** 当前高亮测距 id。 */
+  private highlightedMeasureId: string | null = null
+  /** 测距点击回调。 */
+  private onMeasureClick: ((id: string) => void) | null = null
+
   constructor(map: any, TMap: any) {
     this.map = map
     this.TMap = TMap
@@ -530,6 +546,225 @@ export class OverlayManager {
     }
   }
 
+  // ── Measure layers (persistent) ────────────────────────────────────────────
+
+  private ensureMeasurePolylineLayer() {
+    if (this.measurePolylineLayer) return
+    this.measurePolylineLayer = new this.TMap.MultiPolyline({
+      id: 'tmap-hooker-measure-lines',
+      map: this.map,
+      styles: {
+        default: new this.TMap.PolylineStyle({
+          color: '#4A90D9',
+          width: 2,
+          lineCap: 'butt',
+          dashArray: [10, 6],
+        }),
+        highlight: new this.TMap.PolylineStyle({
+          color: '#2B6CB0',
+          width: 3,
+          lineCap: 'butt',
+          dashArray: [0, 0],
+        }),
+        hidden: new this.TMap.PolylineStyle({
+          color: 'rgba(0,0,0,0)',
+          width: 1,
+          dashArray: [0, 0],
+        }),
+      },
+      geometries: [],
+    })
+    this.measurePolylineLayer.setZIndex(9995)
+    this.measurePolylineLayer.on('click', (evt: any) => {
+      const id: string = evt.geometry?.id
+      if (id) this.onMeasureClick?.(id)
+    })
+  }
+
+  private ensureMeasureMarkerLayer() {
+    if (this.measureMarkerLayer) return
+    this.measureMarkerLayer = new this.TMap.MultiMarker({
+      id: 'tmap-hooker-measure-markers',
+      map: this.map,
+      styles: {
+        default: new this.TMap.MarkerStyle({
+          width: 14,
+          height: 14,
+          anchor: { x: 7, y: 7 },
+          src: this._hollowCircleSvg(),
+        }),
+        hidden: new this.TMap.MarkerStyle({
+          width: 1,
+          height: 1,
+          anchor: { x: 0, y: 0 },
+          src: this._pinSvg('rgba(0,0,0,0)'),
+        }),
+      },
+      geometries: [],
+    })
+    this.measureMarkerLayer.setZIndex(9994)
+  }
+
+  /** 新建或更新一条测距图层（折线 + 顶点标记 + 距离标签）。 */
+  addMeasure(
+    id: string,
+    points: LatLng[],
+    segmentDistances: number[],
+    onClickCb: (id: string) => void,
+  ): void {
+    if (points.length < 2) return
+    this.onMeasureClick = onClickCb
+    this.ensureMeasurePolylineLayer()
+    this.ensureMeasureMarkerLayer()
+
+    const path = points.map((p) => new this.TMap.LatLng(p.lat, p.lng))
+    const styleId = this.highlightedMeasureId === id ? 'highlight' : 'default'
+    const isUpdate = this.measures.has(id)
+
+    // 折线：所有点连成一条
+    const lineGeo = { id, styleId, paths: [path] }
+    if (isUpdate) {
+      this.measurePolylineLayer.updateGeometries([lineGeo])
+    } else {
+      this.measurePolylineLayer.add([lineGeo])
+    }
+
+    this.measures.set(id, [...points])
+    this.measureVisible.set(id, true)
+
+    // 添加顶点标记
+    const markerGeos = points.map((p, i) => ({
+      id: `${id}-v-${i}`,
+      styleId: 'default',
+      position: new this.TMap.LatLng(p.lat, p.lng),
+    }))
+    if (this.measureMarkerLayer) {
+      if (isUpdate) {
+        // 更新：先移除旧标记再添加新标记
+        const pointsArr = this.measures.get(id)!
+        const oldIds = pointsArr.map((_p: LatLng, i: number) => `${id}-v-${i}`)
+        this.measureMarkerLayer.remove(oldIds)
+      }
+      this.measureMarkerLayer.add(markerGeos)
+    }
+
+    // 距离标签：每段中点
+    this._updateMeasureLabels(id, points, segmentDistances)
+  }
+
+  /** 更新测距距离标签。 */
+  private _updateMeasureLabels(id: string, points: LatLng[], segmentDistances: number[]): void {
+    this._destroyMeasureLabels(id)
+    const labels: any[] = []
+    for (let i = 0; i < points.length - 1; i++) {
+      const a = points[i]
+      const b = points[i + 1]
+      const midLat = (a.lat + b.lat) / 2
+      const midLng = (a.lng + b.lng) / 2
+      const dist = segmentDistances[i] ?? 0
+      let text: string
+      if (dist >= 1000) {
+        text = `${(dist / 1000).toFixed(2)} km`
+      } else {
+        text = `${Math.round(dist)} m`
+      }
+      const svg = this._labelCardSvg(text)
+      const w = this._labelCardWidth(text)
+      const labelLayer = new this.TMap.MultiMarker({
+        map: this.map,
+        styles: {
+          default: new this.TMap.MarkerStyle({
+            width: w,
+            height: 24,
+            anchor: { x: Math.round(w / 2), y: 30 },
+            src: svg,
+          }),
+        },
+        geometries: [{
+          id: `${id}-label-${i}`,
+          styleId: 'default',
+          position: new this.TMap.LatLng(midLat, midLng),
+        }],
+      })
+      labels.push(labelLayer)
+    }
+    this.measureLabelMarkers.set(id, labels)
+  }
+
+  /** 销毁某条测距的所有标签。 */
+  private _destroyMeasureLabels(id: string): void {
+    const labels = this.measureLabelMarkers.get(id)
+    if (!labels) return
+    for (const l of labels) l.setMap(null)
+    this.measureLabelMarkers.delete(id)
+  }
+
+  /** 移除测距图层。 */
+  removeMeasure(id: string): void {
+    if (!this.measures.has(id)) return
+    if (this.measurePolylineLayer) {
+      this.measurePolylineLayer.remove([id])
+    }
+    if (this.measureMarkerLayer) {
+      const points = this.measures.get(id)!
+      const ids = points.map((_, i) => `${id}-v-${i}`)
+      this.measureMarkerLayer.remove(ids)
+    }
+    this._destroyMeasureLabels(id)
+    this.measures.delete(id)
+    this.measureVisible.delete(id)
+    if (this.highlightedMeasureId === id) this.highlightedMeasureId = null
+  }
+
+  /** 切换测距可见性。 */
+  setMeasureVisible(id: string, visible: boolean): void {
+    if (!this.measurePolylineLayer || !this.measures.has(id)) return
+    this.measureVisible.set(id, visible)
+    const points = this.measures.get(id)!
+    const path = points.map((p) => new this.TMap.LatLng(p.lat, p.lng))
+    const lineStyle = !visible ? 'hidden'
+      : (this.highlightedMeasureId === id ? 'highlight' : 'default')
+    this.measurePolylineLayer.updateGeometries([{ id, styleId: lineStyle, paths: [path] }])
+
+    const markerStyle = visible ? 'default' : 'hidden'
+    if (this.measureMarkerLayer) {
+      const markerGeos = points.map((p, i) => ({
+        id: `${id}-v-${i}`,
+        styleId: markerStyle,
+        position: new this.TMap.LatLng(p.lat, p.lng),
+      }))
+      this.measureMarkerLayer.updateGeometries(markerGeos)
+    }
+
+    // 标签：显隐通过 setMap
+    const labels = this.measureLabelMarkers.get(id)
+    if (labels) {
+      for (const l of labels) {
+        if (visible) l.setMap(this.map)
+        else l.setMap(null)
+      }
+    }
+  }
+
+  /** 切换测距高亮。 */
+  setMeasureHighlight(id: string | null): void {
+    const prev = this.highlightedMeasureId
+    this.highlightedMeasureId = id
+
+    const lineUpdates: any[] = []
+    if (prev !== null && prev !== id && this.measures.has(prev) && this.measureVisible.get(prev) !== false) {
+      const pts = this.measures.get(prev)!
+      lineUpdates.push({ id: prev, styleId: 'default', paths: [pts.map((p: LatLng) => new this.TMap.LatLng(p.lat, p.lng))] })
+    }
+    if (id !== null && this.measures.has(id) && this.measureVisible.get(id) !== false) {
+      const pts = this.measures.get(id)!
+      lineUpdates.push({ id, styleId: 'highlight', paths: [pts.map((p: LatLng) => new this.TMap.LatLng(p.lat, p.lng))] })
+    }
+    if (lineUpdates.length > 0 && this.measurePolylineLayer) {
+      this.measurePolylineLayer.updateGeometries(lineUpdates)
+    }
+  }
+
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   /** 销毁测量图层（标记、折线、标签）并清空对应 track Map。clearAll 和 clearMeasurement 的共同实现。 */
@@ -578,6 +813,22 @@ export class OverlayManager {
       this.pointLabelLayer.setMap(null)
       this.pointLabelLayer = null
     }
+    // 测距图层清理
+    if (this.measurePolylineLayer) {
+      this.measurePolylineLayer.setMap(null)
+      this.measurePolylineLayer = null
+    }
+    if (this.measureMarkerLayer) {
+      this.measureMarkerLayer.setMap(null)
+      this.measureMarkerLayer = null
+    }
+    for (const labels of this.measureLabelMarkers.values()) {
+      for (const l of labels) l.setMap(null)
+    }
+    this.measureLabelMarkers.clear()
+    this.measures.clear()
+    this.measureVisible.clear()
+    this.highlightedMeasureId = null
   }
 
   /**
@@ -656,12 +907,16 @@ export class OverlayManager {
       this.markerLayer, this.polylineLayer,
       this.polygonLayer, this.rubberBandLayer,
       this.pointMarkerLayer, this.pointLabelLayer,
+      this.measurePolylineLayer, this.measureMarkerLayer,
     ]
     for (const layer of layers) {
       if (layer) layer.setMap(null)
     }
     for (const marker of this.labelMarkers.values()) {
       marker.setMap(null)
+    }
+    for (const labels of this.measureLabelMarkers.values()) {
+      for (const l of labels) l.setMap(null)
     }
   }
 

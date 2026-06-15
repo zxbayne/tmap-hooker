@@ -118,5 +118,23 @@ window.addEventListener('message', (event: MessageEvent) => {
     case PanelCmd.CANCEL_EDIT_CIRCLE:
       toolManager.cancelEditCircle()
       break
+    case PanelCmd.DELETE_MEASURE:
+      toolManager.deleteMeasure(msg.payload.id)
+      break
+    case PanelCmd.SELECT_MEASURE:
+      toolManager.selectMeasure(msg.payload.id)
+      break
+    case PanelCmd.TOGGLE_MEASURE_VISIBLE:
+      toolManager.toggleMeasureVisible(msg.payload.id, msg.payload.visible)
+      break
+    case PanelCmd.RENAME_MEASURE:
+      toolManager.renameMeasure(msg.payload.id, msg.payload.name)
+      break
+    // 测距编辑暂由 hook 层内部处理，不通过 panel 命令触发
+    case PanelCmd.START_EDIT_MEASURE:
+    case PanelCmd.COMMIT_EDIT_MEASURE:
+    case PanelCmd.CANCEL_EDIT_MEASURE:
+    case PanelCmd.UPDATE_MEASURE_VERTEX:
+      break
   }
 })

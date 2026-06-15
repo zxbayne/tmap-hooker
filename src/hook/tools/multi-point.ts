@@ -18,6 +18,8 @@ export class MultiPointTool implements ITool {
   private dblClickHandler: ((evt: any) => void) | null = null
   private keydownHandler: ((evt: KeyboardEvent) => void) | null = null
   private mapContainer: HTMLElement | null = null
+  private measureCount = 0
+  private measureId: string | null = null
 
   /** 注册地图事件监听器，初始化点列表和累计距离。 */
   activate(ctx: ToolContext): void {
@@ -69,7 +71,7 @@ export class MultiPointTool implements ITool {
   /** 清除所有覆盖物和测量数据，重新挂载点击监听器以继续测量。 */
   reset(): void {
     if (this.ctx) {
-      this.ctx.overlays.clearAll()
+      this.ctx.overlays.clearMeasurement()
     }
     this.points = []
     this.totalM = 0
@@ -107,6 +109,42 @@ export class MultiPointTool implements ITool {
       this.keydownHandler = null
     }
     this.setCrosshair(false)
+
+    // 如果至少有两个点，创建持久测距图层
+    if (this.points.length >= 2) {
+      this.measureCount++
+      const id = `measure-${Date.now()}`
+      this.measureId = id
+
+      const segDists: number[] = []
+      for (let i = 0; i < this.points.length - 1; i++) {
+        const a = this.points[i]
+        const b = this.points[i + 1]
+        segDists.push(haversine(a.lat, a.lng, b.lat, b.lng))
+      }
+
+      // 创建持久测距图层（新线 + 标记 + 标签）
+      this.ctx.overlays.addMeasure(id, [...this.points], segDists, (clickedId: string) => {
+        sendToPanel({ type: HookEvent.MEASURE_SELECTED, payload: { id: clickedId } })
+      })
+
+      // 清理临时绘制用的覆盖物
+      this.ctx.overlays.clearMeasurement()
+
+      // 发射测距图层数据到 panel
+      sendToPanel({
+        type: HookEvent.MEASURE_DRAWN,
+        payload: {
+          id,
+          name: `测距 ${this.measureCount}`,
+          visible: true,
+          selected: false,
+          paths: [[...this.points]],
+          segmentDistances: segDists,
+          totalDistance: this.totalM,
+        },
+      })
+    }
     log('MultiPointTool finished')
   }
 

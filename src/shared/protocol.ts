@@ -283,6 +283,17 @@ export interface UpdateMeasureVertexPayload {
   lng: number
 }
 
+/** 统一图层条目 —— Panel 内部聚合用，仅包含图层元数据。 */
+export type LayerKind = 'polygon' | 'circle' | 'measure' | 'point-marker'
+
+export interface LayerMeta {
+  id: string
+  kind: LayerKind
+  name: string
+  visible: boolean
+  selected: boolean
+}
+
 // ── Panel → Hook payload 类型 ────────────────────────────────────────────────
 
 /** 切换工具的命令，toolId 为空字符串时表示取消激活。 */

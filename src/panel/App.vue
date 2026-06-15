@@ -84,6 +84,16 @@
       @import-points="(input) => importPointMarkers(input)"
     />
 
+    <!-- 统一图层列表（跨工具持久显示） -->
+    <LayerList
+      :layers="unifiedLayers"
+      @select-layer="onLayerSelect"
+      @toggle-visible="onLayerToggleVisible"
+      @delete-layer="onLayerDelete"
+      @rename-layer="onLayerRename"
+      @reorder="reorderLayers"
+    />
+
     <!-- 操作按钮栏（多边形工具激活时隐藏） -->
     <ActionBar
       :active-tool="activeTool"
@@ -109,6 +119,8 @@ import ToolBar from './components/ToolBar.vue'
 import ResultPanel from './components/ResultPanel.vue'
 import ActionBar from './components/ActionBar.vue'
 import Settings from './components/Settings.vue'
+import LayerList from './components/LayerList.vue'
+import type { UnifiedLayer } from './composables/useTool'
 
 const {
   isMapReady,
@@ -155,7 +167,61 @@ const {
   circleMode,
   circlePreview,
   circlePreviewGeometry,
+  unifiedLayers,
+  layerOrder,
+  deleteMeasure,
+  selectMeasure,
+  toggleMeasureVisible,
+  renameMeasure,
+  reorderLayers,
 } = useTool()
+
+// ── 统一图层事件分发 ─────────────────────────────────────────────────────────
+
+function findLayer(id: string): UnifiedLayer | undefined {
+  return unifiedLayers.value.find(l => l.id === id)
+}
+
+function onLayerSelect(id: string) {
+  const layer = findLayer(id)
+  if (!layer) return
+  switch (layer.kind) {
+    case 'polygon': selectPolygonFromPanel(id); break
+    case 'measure': selectMeasure(id); break
+    case 'point-marker': selectPointMarkerFromPanel(id); break
+    case 'circle': startEditCircle(id); break
+  }
+}
+
+function onLayerToggleVisible(id: string) {
+  const layer = findLayer(id)
+  if (!layer) return
+  switch (layer.kind) {
+    case 'polygon': togglePolygonVisible(id); break
+    case 'measure': toggleMeasureVisible(id); break
+    case 'point-marker': togglePointMarkerVisible(id); break
+  }
+}
+
+function onLayerDelete(id: string) {
+  const layer = findLayer(id)
+  if (!layer) return
+  switch (layer.kind) {
+    case 'polygon': deletePolygon(id); break
+    case 'measure': deleteMeasure(id); break
+    case 'point-marker': deletePointMarker(id); break
+  }
+}
+
+function onLayerRename(id: string, name: string) {
+  const layer = findLayer(id)
+  if (!layer) return
+  switch (layer.kind) {
+    case 'polygon': renamePolygon(id, name); break
+    case 'measure': renameMeasure(id, name); break
+    case 'point-marker': renamePointMarker(id, name); break
+  }
+}
 
 // ── 折叠/展开状态 ─────────────────────────────────────────────────────────────
 const COLLAPSE_KEY = '__tmh_collapsed__'

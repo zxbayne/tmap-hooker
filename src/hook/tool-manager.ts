@@ -292,6 +292,25 @@ export class ToolManager {
     this._circle()?.updateEditCircle(undefined, radius, nPoints)
   }
 
+  // ── Measure layer commands (persistent, work without active tool) ──────────
+
+  deleteMeasure(id: string): void {
+    this.overlays?.removeMeasure(id)
+  }
+
+  selectMeasure(id: string): void {
+    this.overlays?.setMeasureHighlight(id)
+  }
+
+  toggleMeasureVisible(id: string, visible: boolean): void {
+    this.overlays?.setMeasureVisible(id, visible)
+  }
+
+  /** 重命名测距图层——hook 侧无需处理，名称仅存在于 panel。 */
+  renameMeasure(_id: string, _name: string): void {
+    // no-op: name is panel-side only
+  }
+
   // ── General tool commands ─────────────────────────────────────────────────
 
   finish(): void {
