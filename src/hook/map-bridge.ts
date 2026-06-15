@@ -16,6 +16,18 @@ const ALREADY_PATCHED = '__tmapHookerPatched'
 let POLL_TIMER: ReturnType<typeof setInterval> | null = null
 let pollCount = 0
 
+/** wrapper 内部用，一旦捕获过就设为 true，resetCapture() 重置它。 */
+let captureDone = false
+
+/**
+ * 重置捕获标志。SPA 场景下切回地图页面时调用，
+ * 让下一次 TMap.Map 方法调用重新触发实例捕获。
+ */
+export function resetCapture(): void {
+  captureDone = false
+  log('resetCapture: flag cleared')
+}
+
 /**
  * 安装 TMap 实例检测桥接器，采用双重策略确保无论 TMap 何时加载都能被捕获：
  * 1. setter trap（快速路径）：监听 `window.TMap` 赋值，适用于 TMap 在本脚本之后加载的情况。
@@ -80,11 +92,11 @@ function trySetterTrap(toolManager: ToolManager): void {
 }
 
 /**
- * 在 TMap.Map.prototype 上 hook CAPTURE_METHODS 中的每个方法，
- * 使得任意 map 实例在调用这些方法时都会通知 toolManager。
- * 通过 ALREADY_PATCHED 标记保证幂等性——多次调用不会重复包装。
+ * 在 TMap.Map.prototype 上 hook CAPTURE_METHODS 中的每个方法。
+ * wrapper 永久保留不拆除，通过模块级 captureDone 标志控制是否触发捕获。
+ * 这样在 SPA 场景下，新的 Map 实例调用方法时也能被拦截。
  *
- * @returns true 表示 patch 成功（包含已 patch 的情况），false 表示 TMap 尚未就绪。
+ * @returns true 表示 patch 成功（含已 patch），false 表示 TMap 尚未就绪。
  */
 function tryPrototypePatch(TMap: any, toolManager: ToolManager): boolean {
   if (!TMap) return false
@@ -97,27 +109,19 @@ function tryPrototypePatch(TMap: any, toolManager: ToolManager): boolean {
 
   const proto = TMap.Map.prototype
   if (proto[ALREADY_PATCHED]) {
-    log('prototype already patched, skipping')
+    log('prototype already patched')
     return true
   }
 
   log('patching TMap.Map.prototype, methods to hook:', CAPTURE_METHODS)
 
-  let captured = false
   const onCapture = (instance: any) => {
-    if (captured) return
-    captured = true
+    if (captureDone) return
+    captureDone = true
     toolManager.onMapReady(instance, TMap)
-    // 捕获成功后把所有 wrapper 还原为原始方法，避免持续日志和无谓开销
-    for (const method of CAPTURE_METHODS) {
-      if (typeof originals[method] === 'function') {
-        proto[method] = originals[method]
-      }
-    }
-    log('map instance captured, wrappers removed')
+    log('map instance captured, flag set')
   }
 
-  const originals: Record<string, Function> = {}
   let hookedCount = 0
   for (const method of CAPTURE_METHODS) {
     if (typeof proto[method] !== 'function') {
@@ -125,7 +129,6 @@ function tryPrototypePatch(TMap: any, toolManager: ToolManager): boolean {
       continue
     }
     const orig = proto[method]
-    originals[method] = orig
     proto[method] = function (this: any, ...args: unknown[]) {
       log(`map.${method}() called — capturing instance`)
       onCapture(this)

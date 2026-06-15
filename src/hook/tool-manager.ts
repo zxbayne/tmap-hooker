@@ -29,6 +29,13 @@ export class ToolManager {
   onMapReady(map: any, TMap: any): void {
     if (this.map === map) return
     log('ToolManager.onMapReady — new map instance captured', map)
+
+    // 替换旧实例时（SPA 切回），先停用旧工具
+    if (this.map && this.activeTool) {
+      this.activeTool.deactivate()
+      this.activeTool = null
+    }
+
     this.map = map
     this.TMap = TMap
     this.overlays = new OverlayManager(map, TMap)
