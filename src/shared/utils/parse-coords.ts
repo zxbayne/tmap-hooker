@@ -18,16 +18,19 @@ export function parseCoords(input: string): LatLng[] | null {
   const s = input.trim()
   if (!s) return null
 
-  // 格式一：[[lng,lat],[lng,lat],...]
-  if (s.startsWith('[[')) {
+  // 格式一：JSON 数组 [[lng,lat],...] 或带换行/缩进的变体
+  // 不用 startsWith('[[') 判断——用户粘贴的 JSON 可能带换行符
+  if (s.startsWith('[')) {
     try {
       const arr = JSON.parse(s)
       if (!Array.isArray(arr) || arr.length < 3) return null
+      // 确保是二维数组 [[lng,lat],...]
+      if (!Array.isArray(arr[0])) return null
       const result = arr.map(([lng, lat]: [number, number]) => ({ lat, lng }))
       if (result.some((p) => isNaN(p.lat) || isNaN(p.lng))) return null
       return result
     } catch {
-      return null
+      // JSON 解析失败，继续尝试分号格式
     }
   }
 
@@ -67,30 +70,26 @@ export function parsePointCoords(input: string): LatLng[] | null {
   const s = input.trim()
   if (!s) return null
 
-  // 二维数组 [[lng,lat],...]
-  if (s.startsWith('[[')) {
-    try {
-      const arr = JSON.parse(s)
-      if (!Array.isArray(arr) || arr.length === 0) return null
-      const result = arr.map(([lng, lat]: [number, number]) => ({ lat, lng }))
-      if (result.some((p) => isNaN(p.lat) || isNaN(p.lng))) return null
-      return result
-    } catch {
-      return null
-    }
-  }
-
-  // 一维数组 [lng,lat]
+  // 二维数组 [[lng,lat],...]（含换行变体，靠 JSON.parse 而非 startsWith 判断）
   if (s.startsWith('[')) {
     try {
       const arr = JSON.parse(s)
-      if (!Array.isArray(arr) || arr.length < 2) return null
+      if (!Array.isArray(arr) || arr.length === 0) return null
+      // 判断是 [[lng,lat],...] 还是 [lng,lat]
+      if (Array.isArray(arr[0])) {
+        // 二维数组
+        const result = arr.map(([lng, lat]: [number, number]) => ({ lat, lng }))
+        if (result.some((p) => isNaN(p.lat) || isNaN(p.lng))) return null
+        return result
+      }
+      // 一维数组 [lng,lat]
+      if (arr.length < 2) return null
       const lng = Number(arr[0])
       const lat = Number(arr[1])
       if (isNaN(lat) || isNaN(lng)) return null
       return [{ lat, lng }]
     } catch {
-      return null
+      // 不是合法 JSON，继续尝试分号格式
     }
   }
 
