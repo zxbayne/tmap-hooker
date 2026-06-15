@@ -694,10 +694,10 @@ export class OverlayManager {
     return `data:image/svg+xml;base64,${btoa(svg)}`
   }
 
-  /** 未选中点位图标：灰蓝色大图钉，低调融于地图。 */
+  /** 未选中点位图标：亮蓝色大图钉。 */
   private _pinDefaultSvg(): string {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="30" viewBox="0 0 24 30">
-      <path d="M12 0C6.48 0 2 4.48 2 10c0 7 10 20 10 20S22 17 22 10c0-5.52-4.48-10-10-10z" fill="#C0C0C8" stroke="#fff" stroke-width="1.5"/>
+      <path d="M12 0C6.48 0 2 4.48 2 10c0 7 10 20 10 20S22 17 22 10c0-5.52-4.48-10-10-10z" fill="#4488FF" stroke="#fff" stroke-width="1.5"/>
       <circle cx="12" cy="10" r="4" fill="#fff" opacity="0.9"/>
     </svg>`
     return `data:image/svg+xml;base64,${btoa(svg)}`
