@@ -5,7 +5,7 @@
  */
 import { initLogger, setDebug, log } from './logger'
 import { ToolManager } from './tool-manager'
-import { installMapBridge, resetCapture } from './map-bridge'
+import { installMapBridge } from './map-bridge'
 import { PANEL_SOURCE, PanelCmd } from '@shared/protocol'
 import type { PanelMessage } from '@shared/protocol'
 
@@ -23,9 +23,6 @@ window.addEventListener('message', (event: MessageEvent) => {
 
   switch (msg.type) {
     case PanelCmd.PANEL_READY:
-      // SPA 场景下切回地图页面时，旧 Map 实例可能已销毁，
-      // 新实例尚未被捕获。重置捕获标志让下一次方法调用触发重捕获。
-      resetCapture()
       toolManager.replayMapReady()
       break
     case PanelCmd.SET_TOOL:
