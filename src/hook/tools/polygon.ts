@@ -487,13 +487,13 @@ export class PolygonTool implements ITool {
       map: this.ctx.map,
       styles: {
         default: new TMap.PolygonStyle({
-          color: 'rgba(255, 107, 53, 0.2)',
-          borderColor: '#FF6B35',
+          color: 'rgba(74, 144, 217, 0.12)',
+          borderColor: '#4A90D9',
           borderWidth: 2,
         }),
         highlight: new TMap.PolygonStyle({
-          color: 'rgba(255, 255, 0, 0.35)',
-          borderColor: '#FFD700',
+          color: 'rgba(74, 144, 217, 0.3)',
+          borderColor: '#2B6CB0',
           borderWidth: 3,
         }),
       },

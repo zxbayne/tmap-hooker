@@ -12,6 +12,14 @@ import type { PanelMessage } from '@shared/protocol'
 initLogger()
 log('hook.iife.js loaded, document.readyState =', document.readyState)
 
+// 注入十字准星光标样式（测距工具激活时使用）
+// document_start 时机 document.head 可能未就绪，延迟到 DOMContentLoaded
+document.addEventListener('DOMContentLoaded', () => {
+  const crosshairStyle = document.createElement('style')
+  crosshairStyle.textContent = '.__tmh-crosshair { cursor: crosshair !important; }'
+  document.head.appendChild(crosshairStyle)
+})
+
 const toolManager = new ToolManager()
 installMapBridge(toolManager)
 

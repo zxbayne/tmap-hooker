@@ -7,6 +7,8 @@ import type { LatLng } from '@shared/utils/parse-coords'
 
 type State = 'idle' | 'waiting-a' | 'waiting-b'
 
+const RUBBER_BAND_ID = 'tp-rubber'
+
 export class TwoPointTool implements ITool {
   readonly id = TOOL_IDS.TWO_POINT
 
@@ -14,22 +16,35 @@ export class TwoPointTool implements ITool {
   private ctx: ToolContext | null = null
   private points: LatLng[] = []
   private clickHandler: ((evt: any) => void) | null = null
+  private mousemoveHandler: ((evt: any) => void) | null = null
 
-  /** 注册地图点击监听器，进入等待第一个点的状态。 */
+  /** 注册地图点击 + 鼠标移动监听器，进入等待第一个点的状态。 */
   activate(ctx: ToolContext): void {
     this.ctx = ctx
     this.state = 'waiting-a'
     this.points = []
     this.clickHandler = (evt: any) => this.onMapClick(evt)
     ctx.map.on('click', this.clickHandler)
+
+    this.mousemoveHandler = (evt: any) => this.onMouseMove(evt)
+    ctx.map.on('mousemove', this.mousemoveHandler)
+
+    log('TwoPointTool activated — rubber band')
   }
 
-  /** 注销地图点击监听器，清空内部状态。不清除地图上已绘制的覆盖物（由 ToolManager 统一清理）。 */
+  /** 注销所有地图事件监听器，清空内部状态。 */
   deactivate(): void {
-    if (this.ctx && this.clickHandler) {
-      this.ctx.map.off('click', this.clickHandler)
+    if (this.ctx) {
+      if (this.clickHandler) {
+        this.ctx.map.off('click', this.clickHandler)
+        this.clickHandler = null
+      }
+      if (this.mousemoveHandler) {
+        this.ctx.map.off('mousemove', this.mousemoveHandler)
+        this.mousemoveHandler = null
+        this.ctx.overlays.removeRubberBand(RUBBER_BAND_ID)
+      }
     }
-    this.clickHandler = null
     this.ctx = null
     this.state = 'idle'
   }
@@ -75,10 +90,23 @@ export class TwoPointTool implements ITool {
       })
 
       log('two-point measurement complete, distance =', distanceM)
-      // 两点测距完成后自动停止监听，保留覆盖物供用户查看
+      // 停止所有监听，保留覆盖物
       this.ctx.map.off('click', this.clickHandler!)
       this.clickHandler = null
+      this.ctx.map.off('mousemove', this.mousemoveHandler!)
+      this.mousemoveHandler = null
+      this.ctx.overlays.removeRubberBand(RUBBER_BAND_ID)
       this.state = 'idle'
     }
+  }
+
+  /**
+   * 鼠标移动时更新橡皮筋预览线（A 点 → 鼠标当前位置）。
+   * waiting-a 状态不做预览（还没放 A 点），waiting-b 时显示预览。
+   */
+  private onMouseMove(evt: any): void {
+    if (!this.ctx || this.points.length === 0) return
+    const cursor: LatLng = { lat: evt.latLng.lat, lng: evt.latLng.lng }
+    this.ctx.overlays.setRubberBand(RUBBER_BAND_ID, [this.points[0], cursor])
   }
 }
