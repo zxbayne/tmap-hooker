@@ -233,6 +233,9 @@ export class OverlayManager {
       const id: string = evt.geometry?.id
       if (id) this.onPolygonClick?.(id)
     })
+    // 将插件多边形图层提到最高层级，确保点击事件不会
+    // 被页面自身的多边形截获
+    this.polygonLayer.setZIndex(9999)
     if (onMousedownCb) {
       this.onPolygonMousedown = onMousedownCb
       this._attachMousedownHandler()
@@ -361,6 +364,7 @@ export class OverlayManager {
       },
       geometries: [],
     })
+    this.rubberBandLayer.setZIndex(9996)
   }
 
   /**
@@ -409,6 +413,7 @@ export class OverlayManager {
       },
       geometries: [],
     })
+    this.pointMarkerLayer.setZIndex(9998)
   }
 
   private ensurePointLabelLayer() {
@@ -444,6 +449,7 @@ export class OverlayManager {
       },
       geometries: [],
     })
+    this.pointLabelLayer.setZIndex(9997)
   }
 
   addPointMarker(id: string, latlng: LatLng, name: string): void {
