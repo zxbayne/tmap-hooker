@@ -851,3 +851,32 @@
   border-radius: 8px;
   vertical-align: middle;
 }
+
+/* ── Polygon geometry info ───────────────────────────────────────────────── */
+.poly-geometry-info {
+  display: flex;
+  gap: 10px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  background: rgba(74, 144, 217, 0.1);
+  border: 1px solid rgba(74, 144, 217, 0.25);
+  border-radius: 6px;
+}
+
+.poly-geometry-item {
+  font-size: 12px;
+  font-weight: 600;
+  color: #4A90D9;
+}
+
+/* ── Mouse coordinate display ────────────────────────────────────────────── */
+.coords-display {
+  padding: 4px 10px;
+  background: #0f3460;
+  border-top: 1px solid #2d2d5e;
+  font-size: 11px;
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  color: #5c9ce0;
+  text-align: center;
+  letter-spacing: 0.03em;
+}

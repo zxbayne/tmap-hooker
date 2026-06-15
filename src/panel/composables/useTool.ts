@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue'
 import { HookEvent, PanelCmd } from '@shared/protocol'
-import type { HookMessage, SegmentAddedPayload, MeasurementResultPayload } from '@shared/protocol'
+import type { HookMessage, SegmentAddedPayload } from '@shared/protocol'
 import { useMapBridge } from './useMapBridge'
 import { formatDistance } from '@shared/utils/distance'
 
@@ -18,6 +18,10 @@ export interface PolygonLayer {
   visible: boolean
   selected: boolean
   coords: Array<{ lat: number; lng: number }>
+  /** 面积（平方米），hook 层计算后回传。仅选中/新建/编辑后更新。 */
+  area: number | null
+  /** 周长（米），hook 层计算后回传。 */
+  perimeter: number | null
 }
 
 /** 打点标记条目，Panel 层维护名称、可见性、选中状态和坐标。 */
@@ -39,7 +43,6 @@ export function useTool() {
   const segments = ref<SegmentInfo[]>([])
   const totalM = ref(0)
   const pointCount = ref(0)
-  const twoPointResult = ref<MeasurementResultPayload | null>(null)
 
   // 多边形工具相关状态
   const polygonMode = ref<'idle' | 'drawing'>('idle')
@@ -53,6 +56,9 @@ export function useTool() {
   // 打点标记工具相关状态
   const pointMarkers = ref<PointMarkerItem[]>([])
   let pointNameCounter = 0
+
+  // 鼠标坐标实时显示
+  const mouseCoords = ref<{ lat: number; lng: number } | null>(null)
 
   const totalLabel = computed(() => (totalM.value > 0 ? formatDistance(totalM.value) : ''))
   const isMeasuring = computed(() => activeTool.value !== '')
@@ -92,14 +98,6 @@ export function useTool() {
         break
       }
 
-      case HookEvent.MEASUREMENT_RESULT: {
-        const p = msg.payload as MeasurementResultPayload
-        twoPointResult.value = p
-        totalM.value = p.distanceM
-        activeTool.value = ''
-        break
-      }
-
       case HookEvent.POINT_REMOVED:
         pointCount.value = msg.payload.newCount
         if (segments.value.length > 0) {
@@ -133,6 +131,8 @@ export function useTool() {
           visible: true,
           selected: false,
           coords: [],
+          area: null,
+          perimeter: null,
         })
         break
 
@@ -165,6 +165,15 @@ export function useTool() {
         editingPolygonId.value = null
         break
 
+      case HookEvent.POLYGON_GEOMETRY: {
+        const layer = polygonLayers.value.find((l) => l.id === msg.payload.id)
+        if (layer) {
+          layer.area = msg.payload.area
+          layer.perimeter = msg.payload.perimeter
+        }
+        break
+      }
+
       case HookEvent.POINT_MARKER_ADDED:
         pointMarkers.value.push({
           id: msg.payload.id,
@@ -182,6 +191,10 @@ export function useTool() {
         if (idx !== -1) pointMarkers.value.splice(idx, 1)
         break
       }
+
+      case HookEvent.MOUSE_MOVE:
+        mouseCoords.value = { lat: msg.payload.lat, lng: msg.payload.lng }
+        break
     }
   })
 
@@ -191,7 +204,6 @@ export function useTool() {
     segments.value = []
     totalM.value = 0
     pointCount.value = 0
-    twoPointResult.value = null
     if (next !== 'polygon') {
       polygonMode.value = 'idle'
       drawingPointCount.value = 0
@@ -213,7 +225,6 @@ export function useTool() {
     segments.value = []
     totalM.value = 0
     pointCount.value = 0
-    twoPointResult.value = null
     activeTool.value = ''
     polygonMode.value = 'idle'
     drawingPointCount.value = 0
@@ -334,7 +345,6 @@ export function useTool() {
     segments,
     totalLabel,
     pointCount,
-    twoPointResult,
     // polygon
     polygonMode,
     drawingPointCount,
@@ -343,6 +353,8 @@ export function useTool() {
     editingPolygonId,
     // point marker
     pointMarkers,
+    // mouse coords
+    mouseCoords,
     // commands
     setTool,
     finish,

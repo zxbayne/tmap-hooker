@@ -27,13 +27,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { TOOL_IDS } from '@shared/tool-config'
-import type { MeasurementResultPayload } from '@shared/protocol'
 import type { SegmentInfo } from '../composables/useTool'
 
 const props = defineProps<{
   activeTool: string
   pointCount: number
-  twoPointResult: MeasurementResultPayload | null
   segments: SegmentInfo[]
 }>()
 
@@ -51,6 +49,6 @@ const showBar = computed(() => props.activeTool !== TOOL_IDS.POLYGON)
 
 /** 判断当前是否有可清除的数据（有数据时才显示清除按钮）。 */
 const hasAnyData = computed(
-  () => props.pointCount > 0 || props.twoPointResult !== null || props.segments.length > 0,
+  () => props.pointCount > 0 || props.segments.length > 0,
 )
 </script>

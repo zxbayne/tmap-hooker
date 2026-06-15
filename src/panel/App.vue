@@ -47,7 +47,6 @@
     <!-- 工具结果/操作区 -->
     <ResultPanel
       :active-tool="activeTool"
-      :two-point-result="twoPointResult"
       :segments="segments"
       :total-label="totalLabel"
       :point-count="pointCount"
@@ -79,12 +78,16 @@
     <ActionBar
       :active-tool="activeTool"
       :point-count="pointCount"
-      :two-point-result="twoPointResult"
       :segments="segments"
       @finish="finish"
       @undo="undo"
       @clear="clear"
     />
+
+    <!-- 鼠标坐标显示 -->
+    <div v-if="mouseCoords" class="coords-display">
+      {{ mouseCoords.lng.toFixed(6) }}, {{ mouseCoords.lat.toFixed(6) }}
+    </div>
   </div>
 </template>
 
@@ -103,7 +106,6 @@ const {
   segments,
   totalLabel,
   pointCount,
-  twoPointResult,
   polygonMode,
   drawingPointCount,
   polygonLayers,
@@ -131,6 +133,7 @@ const {
   renamePointMarker,
   importPointMarkers,
   setDebug,
+  mouseCoords,
 } = useTool()
 
 // ── 折叠/展开状态 ─────────────────────────────────────────────────────────────

@@ -43,3 +43,17 @@ export function getLabelStyleId(a: { lat: number; lng: number }, b: { lat: numbe
   if (angle < 112.5)                  return 'label-right'
   return                                     'label-up-right'
 }
+
+/**
+ * 将面积（平方米）格式化为人类可读的字符串。
+ * ≥ 1,000,000 m² → km²；≥ 1000 m² → 公顷系统过渡；< 1000 m² → m²。
+ */
+export function formatArea(sqMeters: number): string {
+  if (sqMeters >= 1_000_000) {
+    return `${(sqMeters / 1_000_000).toFixed(2)} km²`
+  }
+  if (sqMeters >= 1000) {
+    return `${(sqMeters / 1_000_000).toFixed(4)} km² (${Math.round(sqMeters).toLocaleString()} m²)`
+  }
+  return `${Math.round(sqMeters)} m²`
+}
