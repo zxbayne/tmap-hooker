@@ -103,5 +103,20 @@ window.addEventListener('message', (event: MessageEvent) => {
     case PanelCmd.FINISH_CIRCLE:
       toolManager.finishCircle()
       break
+    case PanelCmd.START_DRAWING_CIRCLE:
+      toolManager.startDrawingCircle()
+      break
+    case PanelCmd.CANCEL_DRAWING_CIRCLE:
+      toolManager.cancelDrawingCircle()
+      break
+    case PanelCmd.START_EDIT_CIRCLE:
+      toolManager.startEditCircle(msg.payload.id)
+      break
+    case PanelCmd.COMMIT_EDIT_CIRCLE:
+      toolManager.commitEditCircle()
+      break
+    case PanelCmd.CANCEL_EDIT_CIRCLE:
+      toolManager.cancelEditCircle()
+      break
   }
 })

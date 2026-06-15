@@ -268,6 +268,30 @@ export class ToolManager {
     this._circle()?.finishCircle()
   }
 
+  startDrawingCircle(): void {
+    this._circle()?.startDrawing()
+  }
+
+  cancelDrawingCircle(): void {
+    this._circle()?.cancelDrawing()
+  }
+
+  startEditCircle(id: string): void {
+    this._circle()?.startEditCircle(id)
+  }
+
+  commitEditCircle(): void {
+    this._circle()?.commitEditCircle()
+  }
+
+  cancelEditCircle(): void {
+    this._circle()?.cancelEditCircle()
+  }
+
+  updateEditCircle(id: string, radius: number, nPoints: number): void {
+    this._circle()?.updateEditCircle(undefined, radius, nPoints)
+  }
+
   // ── General tool commands ─────────────────────────────────────────────────
 
   finish(): void {

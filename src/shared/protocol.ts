@@ -42,6 +42,17 @@ export const enum HookEvent {
   // 圆形工具事件
   CIRCLE_CENTER_SET = 'CIRCLE_CENTER_SET',
   CIRCLE_UPDATED = 'CIRCLE_UPDATED',
+  // 圆形编辑事件
+  CIRCLE_EDIT_STARTED = 'CIRCLE_EDIT_STARTED',
+  CIRCLE_EDIT_COMMITTED = 'CIRCLE_EDIT_COMMITTED',
+  CIRCLE_EDIT_CANCELLED = 'CIRCLE_EDIT_CANCELLED',
+  // 测距图层事件
+  MEASURE_DRAWN = 'MEASURE_DRAWN',
+  MEASURE_SELECTED = 'MEASURE_SELECTED',
+  // 测距编辑事件
+  MEASURE_EDIT_STARTED = 'MEASURE_EDIT_STARTED',
+  MEASURE_EDIT_COMMITTED = 'MEASURE_EDIT_COMMITTED',
+  MEASURE_EDIT_CANCELLED = 'MEASURE_EDIT_CANCELLED',
 }
 
 // Panel → Hook 命令：panel 层用户操作时发送给 hook
@@ -73,6 +84,20 @@ export const enum PanelCmd {
   // 圆形工具命令
   UPDATE_CIRCLE = 'UPDATE_CIRCLE',
   FINISH_CIRCLE = 'FINISH_CIRCLE',
+  START_DRAWING_CIRCLE = 'START_DRAWING_CIRCLE',
+  CANCEL_DRAWING_CIRCLE = 'CANCEL_DRAWING_CIRCLE',
+  START_EDIT_CIRCLE = 'START_EDIT_CIRCLE',
+  COMMIT_EDIT_CIRCLE = 'COMMIT_EDIT_CIRCLE',
+  CANCEL_EDIT_CIRCLE = 'CANCEL_EDIT_CIRCLE',
+  // 测距图层命令
+  DELETE_MEASURE = 'DELETE_MEASURE',
+  RENAME_MEASURE = 'RENAME_MEASURE',
+  TOGGLE_MEASURE_VISIBLE = 'TOGGLE_MEASURE_VISIBLE',
+  SELECT_MEASURE = 'SELECT_MEASURE',
+  START_EDIT_MEASURE = 'START_EDIT_MEASURE',
+  COMMIT_EDIT_MEASURE = 'COMMIT_EDIT_MEASURE',
+  CANCEL_EDIT_MEASURE = 'CANCEL_EDIT_MEASURE',
+  UPDATE_MEASURE_VERTEX = 'UPDATE_MEASURE_VERTEX',
 }
 
 // ── Hook → Panel payload 类型 ────────────────────────────────────────────────
@@ -217,6 +242,47 @@ export interface CircleUpdatedPayload {
   perimeter: number
 }
 
+/** 圆形编辑事件负载。 */
+export interface CircleEditEventPayload {
+  id: string
+}
+
+/** 测距图层数据模型。 */
+export interface MeasureLayer {
+  id: string
+  name: string
+  visible: boolean
+  selected: boolean
+  /** 线段组：每个元素是一条 sub-path 的顶点数组 */
+  paths: LatLng[][]
+  /** 每段距离（米），与 paths 一一对应 */
+  segmentDistances: number[]
+  /** 总距离（米） */
+  totalDistance: number
+}
+
+/** 测距图层创建后发送完整图层数据。 */
+export interface MeasureDrawnPayload extends MeasureLayer {}
+
+/** 测距图层被选中。 */
+export interface MeasureSelectedPayload {
+  id: string | null
+}
+
+/** 测距编辑事件。 */
+export interface MeasureEditEventPayload {
+  id: string
+}
+
+/** 测距编辑中拖动了某个折点。 */
+export interface UpdateMeasureVertexPayload {
+  id: string
+  pathIdx: number
+  vertexIdx: number
+  lat: number
+  lng: number
+}
+
 // ── Panel → Hook payload 类型 ────────────────────────────────────────────────
 
 /** 切换工具的命令，toolId 为空字符串时表示取消激活。 */
@@ -289,6 +355,38 @@ export interface UpdateCirclePayload {
   nPoints: number
 }
 
+/** 启动圆形编辑。 */
+export interface StartEditCirclePayload {
+  id: string
+}
+
+/** 测距图层重命名。 */
+export interface RenameMeasurePayload {
+  id: string
+  name: string
+}
+
+/** 测距图层显隐。 */
+export interface ToggleMeasureVisiblePayload {
+  id: string
+  visible: boolean
+}
+
+/** 测距图层选中。 */
+export interface SelectMeasurePayload {
+  id: string
+}
+
+/** 测距图层删除。 */
+export interface DeleteMeasurePayload {
+  id: string
+}
+
+/** 测距编辑启动。 */
+export interface StartEditMeasurePayload {
+  id: string
+}
+
 // ── 消息联合类型（用于 TypeScript 类型收窄） ────────────────────────────────
 
 /**
@@ -320,6 +418,14 @@ export type HookMessage =
   | { source: typeof HOOK_SOURCE; type: HookEvent.MOUSE_MOVE; payload: MouseMovePayload }
   | { source: typeof HOOK_SOURCE; type: HookEvent.CIRCLE_CENTER_SET; payload: CircleCenterSetPayload }
   | { source: typeof HOOK_SOURCE; type: HookEvent.CIRCLE_UPDATED; payload: CircleUpdatedPayload }
+  | { source: typeof HOOK_SOURCE; type: HookEvent.CIRCLE_EDIT_STARTED; payload: CircleEditEventPayload }
+  | { source: typeof HOOK_SOURCE; type: HookEvent.CIRCLE_EDIT_COMMITTED; payload: CircleEditEventPayload }
+  | { source: typeof HOOK_SOURCE; type: HookEvent.CIRCLE_EDIT_CANCELLED; payload: CircleEditEventPayload }
+  | { source: typeof HOOK_SOURCE; type: HookEvent.MEASURE_DRAWN; payload: MeasureDrawnPayload }
+  | { source: typeof HOOK_SOURCE; type: HookEvent.MEASURE_SELECTED; payload: MeasureSelectedPayload }
+  | { source: typeof HOOK_SOURCE; type: HookEvent.MEASURE_EDIT_STARTED; payload: MeasureEditEventPayload }
+  | { source: typeof HOOK_SOURCE; type: HookEvent.MEASURE_EDIT_COMMITTED; payload: MeasureEditEventPayload }
+  | { source: typeof HOOK_SOURCE; type: HookEvent.MEASURE_EDIT_CANCELLED; payload: MeasureEditEventPayload }
 
 export type PanelMessage =
   | { source: typeof PANEL_SOURCE; type: PanelCmd.PANEL_READY }
@@ -346,6 +452,19 @@ export type PanelMessage =
   | { source: typeof PANEL_SOURCE; type: PanelCmd.IMPORT_POINT_MARKERS; payload: ImportPointMarkersPayload }
   | { source: typeof PANEL_SOURCE; type: PanelCmd.UPDATE_CIRCLE; payload: UpdateCirclePayload }
   | { source: typeof PANEL_SOURCE; type: PanelCmd.FINISH_CIRCLE }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.START_DRAWING_CIRCLE }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.CANCEL_DRAWING_CIRCLE }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.START_EDIT_CIRCLE; payload: StartEditCirclePayload }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.COMMIT_EDIT_CIRCLE }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.CANCEL_EDIT_CIRCLE }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.DELETE_MEASURE; payload: DeleteMeasurePayload }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.RENAME_MEASURE; payload: RenameMeasurePayload }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.TOGGLE_MEASURE_VISIBLE; payload: ToggleMeasureVisiblePayload }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.SELECT_MEASURE; payload: SelectMeasurePayload }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.START_EDIT_MEASURE; payload: StartEditMeasurePayload }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.COMMIT_EDIT_MEASURE }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.CANCEL_EDIT_MEASURE }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.UPDATE_MEASURE_VERTEX; payload: UpdateMeasureVertexPayload }
 
 /** 从 hook 层向 panel 层发送事件消息（自动附加 source 字段）。 */
 export function sendToPanel(msg: DistributiveOmit<HookMessage, 'source'>): void {

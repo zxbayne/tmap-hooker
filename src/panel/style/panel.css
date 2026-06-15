@@ -872,3 +872,65 @@
 }
 
 .circle-finish-btn:hover { opacity: 0.85; }
+
+/* ── Circle new UI ──────────────────────────────────────────────────────── */
+.circle-idle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.circle-start-btn {
+  padding: 6px 12px;
+  border-radius: 5px;
+  border: 1px solid var(--c-blue);
+  background: transparent;
+  color: var(--c-blue);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.circle-start-btn:hover {
+  background: var(--c-blue-bg);
+}
+
+.circle-drawing {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.circle-drawing-badge {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 8px;
+  background: var(--c-accent-bg);
+  color: var(--c-accent);
+  border: 1px solid var(--c-accent-border);
+  animation: poly-pulse 1.6s ease infinite;
+}
+
+.circle-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.circle-edit-hint {
+  font-size: 10px;
+  color: var(--c-text-muted);
+  text-align: center;
+  padding: 4px 0;
+  border: 1px dashed var(--c-border);
+  border-radius: 4px;
+  margin-bottom: 6px;
+}
+
+.circle-geometry-info {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--c-text-dim);
+}

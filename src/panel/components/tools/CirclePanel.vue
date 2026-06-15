@@ -1,7 +1,23 @@
 <template>
   <div class="circle-panel">
-    <!-- 预览状态：圆心已落，等待调整参数 -->
-    <div v-if="circlePreview" class="circle-preview">
+    <!-- idle：未开始绘制 -->
+    <div v-if="circleMode === 'idle'" class="circle-idle">
+      <div class="circle-hint">点击下方按钮开始绘制圆形</div>
+      <button class="circle-start-btn" @click="$emit('startDrawing')">
+        ⭕ 开始绘制圆形
+      </button>
+    </div>
+
+    <!-- drawing：拖拽绘制中 -->
+    <div v-else-if="circleMode === 'drawing'" class="circle-drawing">
+      <div class="circle-drawing-badge">🖱 拖拽中</div>
+      <button class="poly-btn cancel-btn" @click="$emit('cancelDrawing')">
+        取消
+      </button>
+    </div>
+
+    <!-- placed / 预览：圆心已放，等待调参完成 -->
+    <div v-else-if="circleMode === 'placed' && circlePreview" class="circle-preview">
       <div class="circle-center-info">
         <span class="circle-label">圆心</span>
         <span class="circle-coords">{{ circlePreview.lng.toFixed(6) }}, {{ circlePreview.lat.toFixed(6) }}</span>
@@ -10,21 +26,10 @@
       <div class="circle-param">
         <label class="circle-param-label">半径</label>
         <div class="circle-param-row">
-          <input
-            type="range"
-            :min="50"
-            :max="10000"
-            :step="10"
-            :value="radius"
-            class="circle-slider"
-            @input="onRadiusSlider"
-          />
-          <input
-            type="number"
-            :value="radius"
-            class="circle-number"
-            @change="onRadiusInput"
-          />
+          <input type="range" :min="50" :max="10000" :step="10"
+            :value="radius" class="circle-slider" @input="onRadiusSlider" />
+          <input type="number" :value="radius" class="circle-number"
+            @change="onRadiusInput" />
           <span class="circle-unit">m</span>
         </div>
       </div>
@@ -33,10 +38,8 @@
         <label class="circle-param-label">拟合点数</label>
         <div class="circle-param-row">
           <select :value="nPoints" class="circle-select" @change="onNPointsChange">
-            <option :value="16">16</option>
-            <option :value="32">32</option>
-            <option :value="64">64（推荐）</option>
-            <option :value="128">128</option>
+            <option :value="16">16</option><option :value="32">32</option>
+            <option :value="64">64（推荐）</option><option :value="128">128</option>
           </select>
         </div>
       </div>
@@ -46,55 +49,82 @@
         <span>周长 {{ formatDistance(previewGeometry.perimeter) }}</span>
       </div>
 
-      <button class="circle-finish-btn" @click="$emit('finishCircle')">
-        ✓ 完成
-      </button>
+      <div class="circle-actions">
+        <button class="circle-finish-btn" @click="$emit('finishCircle')">✓ 完成</button>
+        <button class="poly-btn cancel-btn" @click="$emit('cancelDrawing')">取消</button>
+      </div>
     </div>
 
-    <!-- 无预览时的提示 -->
-    <div v-else class="circle-hint">
-      点击地图放置圆心
+    <!-- editing：编辑模式 -->
+    <div v-else-if="circleMode === 'editing'" class="circle-preview">
+      <div class="circle-edit-hint">拖动地图上的蓝色圆心手柄 / 调整下方参数</div>
+
+      <div class="circle-param">
+        <label class="circle-param-label">半径</label>
+        <div class="circle-param-row">
+          <input type="range" :min="50" :max="10000" :step="10"
+            :value="radius" class="circle-slider" @input="onRadiusSlider" />
+          <input type="number" :value="radius" class="circle-number"
+            @change="onRadiusInput" />
+          <span class="circle-unit">m</span>
+        </div>
+      </div>
+
+      <div class="circle-param">
+        <label class="circle-param-label">拟合点数</label>
+        <div class="circle-param-row">
+          <select :value="nPoints" class="circle-select" @change="onNPointsChange">
+            <option :value="16">16</option><option :value="32">32</option>
+            <option :value="64">64（推荐）</option><option :value="128">128</option>
+          </select>
+        </div>
+      </div>
+
+      <div v-if="previewGeometry" class="circle-geometry-info">
+        <span>面积 {{ formatArea(previewGeometry.area) }}</span>
+        <span>周长 {{ formatDistance(previewGeometry.perimeter) }}</span>
+      </div>
+
+      <div class="circle-actions">
+        <button class="circle-finish-btn" @click="$emit('commitEdit')">✓ 完成</button>
+        <button class="poly-btn cancel-btn" @click="$emit('cancelEdit')">取消</button>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { formatDistance, formatArea } from '../../../shared/utils/distance'
 
 export interface CirclePreview {
-  id: string
-  lat: number
-  lng: number
-  radius: number
-  nPoints: number
+  id: string; lat: number; lng: number
+  radius: number; nPoints: number
 }
-
 export interface CircleGeometry {
-  area: number
-  perimeter: number
+  area: number; perimeter: number
 }
 
 const props = defineProps<{
+  circleMode: 'idle' | 'drawing' | 'placed' | 'editing'
   circlePreview: CirclePreview | null
   previewGeometry: CircleGeometry | null
 }>()
 
 const emit = defineEmits<{
+  startDrawing: []
+  cancelDrawing: []
   updateCircle: [id: string, radius: number, nPoints: number]
   finishCircle: []
+  commitEdit: []
+  cancelEdit: []
 }>()
 
 const radius = ref(props.circlePreview?.radius ?? 500)
 const nPoints = ref(props.circlePreview?.nPoints ?? 64)
 
-// 同步 prop 变化
-import { watch } from 'vue'
 watch(() => props.circlePreview, (p) => {
-  if (p) {
-    radius.value = p.radius
-    nPoints.value = p.nPoints
-  }
+  if (p) { radius.value = p.radius; nPoints.value = p.nPoints }
 })
 
 function sendUpdate() {

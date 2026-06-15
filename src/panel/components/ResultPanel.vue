@@ -27,10 +27,15 @@
     />
     <CirclePanel
       v-else-if="activeTool === TOOL_IDS.CIRCLE"
+      :circle-mode="circleMode"
       :circle-preview="circlePreview"
       :preview-geometry="circlePreviewGeometry"
+      @start-drawing="emit('startDrawingCircle')"
+      @cancel-drawing="emit('cancelDrawingCircle')"
       @update-circle="(id, r, n) => emit('updateCircle', id, r, n)"
       @finish-circle="emit('finishCircle')"
+      @commit-edit="emit('commitEditCircle')"
+      @cancel-edit="emit('cancelEditCircle')"
     />
     <PointPanel
       v-else-if="activeTool === TOOL_IDS.POINT_MARKER"
@@ -67,6 +72,7 @@ const props = defineProps<{
   // point marker
   pointMarkers: PointMarkerItem[]
   // circle
+  circleMode: 'idle' | 'drawing' | 'placed' | 'editing'
   circlePreview: CirclePreview | null
   circlePreviewGeometry: CircleGeometry | null
 }>()
@@ -87,6 +93,10 @@ const emit = defineEmits<{
   // circle
   updateCircle: [id: string, radius: number, nPoints: number]
   finishCircle: []
+  startDrawingCircle: []
+  cancelDrawingCircle: []
+  commitEditCircle: []
+  cancelEditCircle: []
   // point marker
   deletePoint: [id: string]
   renamePoint: [id: string, name: string]

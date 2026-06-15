@@ -55,8 +55,14 @@
       :polygon-layers="polygonLayers"
       :editing-polygon-id="editingPolygonId"
       :point-markers="pointMarkers"
+      :circle-mode="circleMode"
       :circle-preview="circlePreview"
       :circle-preview-geometry="circlePreviewGeometry"
+      @start-drawing-circle="startDrawingCircle"
+      @cancel-drawing-circle="cancelDrawingCircle"
+      @start-edit-circle="(id) => startEditCircle(id)"
+      @commit-edit-circle="commitEditCircle"
+      @cancel-edit-circle="cancelEditCircle"
       @start-drawing="startDrawingPolygon"
       @finish-drawing="finishDrawingPolygon"
       @cancel-drawing="cancelDrawingPolygon"
@@ -139,8 +145,14 @@ const {
   importPointMarkers,
   updateCircle,
   finishCircle,
+  startDrawingCircle,
+  cancelDrawingCircle,
+  startEditCircle,
+  commitEditCircle,
+  cancelEditCircle,
   setDebug,
   mouseCoords,
+  circleMode,
   circlePreview,
   circlePreviewGeometry,
 } = useTool()

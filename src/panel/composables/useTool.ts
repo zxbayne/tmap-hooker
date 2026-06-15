@@ -61,6 +61,7 @@ export function useTool() {
   const mouseCoords = ref<{ lat: number; lng: number } | null>(null)
 
   // 圆形工具状态
+  const circleMode = ref<'idle' | 'drawing' | 'placed' | 'editing'>('idle')
   const circlePreview = ref<{ id: string; lat: number; lng: number; radius: number; nPoints: number } | null>(null)
   const circlePreviewGeometry = ref<{ area: number; perimeter: number } | null>(null)
 
@@ -201,6 +202,7 @@ export function useTool() {
         break
 
       case HookEvent.CIRCLE_CENTER_SET:
+        circleMode.value = 'drawing'
         circlePreview.value = {
           id: msg.payload.id,
           lat: msg.payload.lat,
@@ -213,6 +215,7 @@ export function useTool() {
 
       case HookEvent.CIRCLE_UPDATED:
         if (circlePreview.value && circlePreview.value.id === msg.payload.id) {
+          if (circleMode.value === 'drawing') circleMode.value = 'placed'
           circlePreview.value.radius = msg.payload.radius
           circlePreview.value.nPoints = msg.payload.nPoints
           circlePreviewGeometry.value = {
@@ -220,6 +223,17 @@ export function useTool() {
             perimeter: msg.payload.perimeter,
           }
         }
+        break
+
+      case HookEvent.CIRCLE_EDIT_STARTED:
+        circleMode.value = 'editing'
+        break
+
+      case HookEvent.CIRCLE_EDIT_COMMITTED:
+      case HookEvent.CIRCLE_EDIT_CANCELLED:
+        circleMode.value = 'idle'
+        circlePreview.value = null
+        circlePreviewGeometry.value = null
         break
     }
   })
@@ -231,6 +245,7 @@ export function useTool() {
     totalM.value = 0
     pointCount.value = 0
     if (next !== 'circle') {
+      circleMode.value = 'idle'
       circlePreview.value = null
       circlePreviewGeometry.value = null
     }
@@ -368,14 +383,38 @@ export function useTool() {
 
   // ── Circle commands ────────────────────────────────────────────────────────
 
+  function startDrawingCircle() {
+    sendCmd({ type: PanelCmd.START_DRAWING_CIRCLE })
+  }
+
+  function cancelDrawingCircle() {
+    circleMode.value = 'idle'
+    circlePreview.value = null
+    circlePreviewGeometry.value = null
+    sendCmd({ type: PanelCmd.CANCEL_DRAWING_CIRCLE })
+  }
+
   function updateCircle(id: string, radius: number, nPoints: number) {
     sendCmd({ type: PanelCmd.UPDATE_CIRCLE, payload: { id, radius, nPoints } })
   }
 
   function finishCircle() {
     sendCmd({ type: PanelCmd.FINISH_CIRCLE })
+    circleMode.value = 'idle'
     circlePreview.value = null
     circlePreviewGeometry.value = null
+  }
+
+  function startEditCircle(id: string) {
+    sendCmd({ type: PanelCmd.START_EDIT_CIRCLE, payload: { id } })
+  }
+
+  function commitEditCircle() {
+    sendCmd({ type: PanelCmd.COMMIT_EDIT_CIRCLE })
+  }
+
+  function cancelEditCircle() {
+    sendCmd({ type: PanelCmd.CANCEL_EDIT_CIRCLE })
   }
 
   function setDebug(enabled: boolean) {
@@ -400,6 +439,7 @@ export function useTool() {
     // mouse coords
     mouseCoords,
     // circle
+    circleMode,
     circlePreview,
     circlePreviewGeometry,
     // commands
@@ -426,6 +466,11 @@ export function useTool() {
     importPointMarkers,
     updateCircle,
     finishCircle,
+    startDrawingCircle,
+    cancelDrawingCircle,
+    startEditCircle,
+    commitEditCircle,
+    cancelEditCircle,
     setDebug,
   }
 }
