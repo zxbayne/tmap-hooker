@@ -11,7 +11,7 @@ export class OverlayManager {
   private TMap: any
   private markerLayer: any = null
   private polylineLayer: any = null
-  private labelLayer: any = null
+  private labelMarkers: Map<string, any> = new Map()
   private polygonLayer: any = null
   private rubberBandLayer: any = null
   /** 持久点位图层（不被 clearMeasurement 清除）。 */
@@ -21,7 +21,6 @@ export class OverlayManager {
   /** 已添加的标记 id 集合，用于区分 add 和 update 操作。 */
   private markers: Map<string, boolean> = new Map()
   private polylines: Map<string, boolean> = new Map()
-  private labels: Map<string, boolean> = new Map()
   /**
    * 已添加的多边形路径缓存（paths 数组）。
    * 仅存储"真实"多边形（非预览），由 addPolygon 写入、removePolygon 清理。
@@ -61,10 +60,10 @@ export class OverlayManager {
       map: this.map,
       styles: {
         default: new this.TMap.MarkerStyle({
-          width: 22,
-          height: 22,
-          anchor: { x: 11, y: 11 },
-          src: this._markerSvg(''),
+          width: 14,
+          height: 14,
+          anchor: { x: 7, y: 7 },
+          src: this._hollowCircleSvg(),
         }),
       },
       geometries: [],
@@ -106,11 +105,10 @@ export class OverlayManager {
       map: this.map,
       styles: {
         default: new this.TMap.PolylineStyle({
-          color: '#FF6B35',
-          width: 3,
-          borderWidth: 1,
-          borderColor: '#ffffff',
-          lineCap: 'round',
+          color: '#4A90D9',
+          width: 2,
+          lineCap: 'butt',
+          dashArray: [10, 6],
         }),
       },
       geometries: [],
@@ -130,50 +128,39 @@ export class OverlayManager {
     this.polylines.delete(id)
   }
 
-  // ── Labels ────────────────────────────────────────────────────────────────
+  // ── Labels (per-marker with SVG cards) ────────────────────────────────────
 
-  private ensureLabelLayer() {
-    if (this.labelLayer) return
-    const base = {
-      color: 'rgb(238, 117, 45)',
-      size: 12,
-      angle: 0,
-      background: true,
-      backgroundColor: 'rgba(20, 20, 40, 0.85)',
-      borderRadius: 4,
+  addLabel(id: string, latlng: LatLng, text: string, _styleId = 'default'): void {
+    // 更新已有标签：先销毁旧 mini-MultiMarker 再建新的
+    if (this.labelMarkers.has(id)) {
+      this.labelMarkers.get(id)!.setMap(null)
     }
-    this.labelLayer = new this.TMap.MultiLabel({
-      id: 'tmap-hooker-labels',
+    const svg = this._labelCardSvg(text)
+    const w = this._labelCardWidth(text)
+    const layer = new this.TMap.MultiMarker({
       map: this.map,
       styles: {
-        // E-W 线段 → 标签在正上方
-        'label-up':        new this.TMap.LabelStyle({ ...base, offset: { x: 0,   y: -28 } }),
-        // N-S 线段 → 标签在正右方
-        'label-right':     new this.TMap.LabelStyle({ ...base, offset: { x: 30,  y:   0 } }),
-        // NE-SW 线段 → 标签在左上方（垂直于线段）
-        'label-up-left':   new this.TMap.LabelStyle({ ...base, offset: { x: -20, y: -20 } }),
-        // NW-SE 线段 → 标签在右上方（垂直于线段）
-        'label-up-right':  new this.TMap.LabelStyle({ ...base, offset: { x: 20,  y: -20 } }),
+        default: new this.TMap.MarkerStyle({
+          width: w,
+          height: 24,
+          anchor: { x: Math.round(w / 2), y: 30 },  // 标签底部在坐标点上方 6px
+          src: svg,
+        }),
       },
-      geometries: [],
+      geometries: [{
+        id,
+        styleId: 'default',
+        position: new this.TMap.LatLng(latlng.lat, latlng.lng),
+      }],
     })
-  }
-
-  addLabel(id: string, latlng: LatLng, text: string, styleId = 'default'): void {
-    this.ensureLabelLayer()
-    const geometry = {
-      id,
-      styleId,
-      position: new this.TMap.LatLng(latlng.lat, latlng.lng),
-      content: text,
-    }
-    this._upsert(this.labelLayer, this.labels, id, geometry)
+    this.labelMarkers.set(id, layer)
   }
 
   removeLabel(id: string): void {
-    if (!this.labelLayer || !this.labels.has(id)) return
-    this.labelLayer.remove([id])
-    this.labels.delete(id)
+    const marker = this.labelMarkers.get(id)
+    if (!marker) return
+    marker.setMap(null)
+    this.labelMarkers.delete(id)
   }
 
   // ── Polygons ──────────────────────────────────────────────────────────────
@@ -209,21 +196,21 @@ export class OverlayManager {
       map: this.map,
       styles: {
         default: new this.TMap.PolygonStyle({
-          color: 'rgba(255, 107, 53, 0.2)',
-          borderColor: '#FF6B35',
+          color: 'rgba(74, 144, 217, 0.12)',
+          borderColor: '#4A90D9',
           borderWidth: 2,
           borderDashArray: [0, 0],
         }),
         highlight: new this.TMap.PolygonStyle({
-          color: 'rgba(255, 53, 0, 0.35)',
-          borderColor: '#FF3500',
+          color: 'rgba(74, 144, 217, 0.25)',
+          borderColor: '#2B6CB0',
           borderWidth: 3,
           borderDashArray: [0, 0],
         }),
         /** 绘制中的实时预览多边形，使用更低透明度以区分已提交的多边形。 */
         preview: new this.TMap.PolygonStyle({
-          color: 'rgba(255, 107, 53, 0.08)',
-          borderColor: 'rgba(255, 107, 53, 0.55)',
+          color: 'rgba(74, 144, 217, 0.06)',
+          borderColor: 'rgba(74, 144, 217, 0.5)',
           borderWidth: 2,
           borderDashArray: [8, 6],
         }),
@@ -364,11 +351,10 @@ export class OverlayManager {
       map: this.map,
       styles: {
         default: new this.TMap.PolylineStyle({
-          color: 'rgba(255, 107, 53, 0.55)',
+          color: '#4A90D9',
           width: 2,
-          borderWidth: 1,
-          borderColor: 'rgba(255, 107, 53, 0.2)',
-          lineCap: 'round',
+          lineCap: 'butt',
+          dashArray: [10, 6],
         }),
       },
       geometries: [],
@@ -442,27 +428,20 @@ export class OverlayManager {
       map: this.map,
       styles: {
         default: new this.TMap.LabelStyle({
-          color: '#FF6B35',
-          size: 12,
+          color: '#4A90D9',
+          size: 14,
           angle: 0,
-          background: true,
-          backgroundColor: 'rgba(20, 20, 40, 0.85)',
-          borderRadius: 4,
           offset: { x: 0, y: 6 },
         }),
         highlight: new this.TMap.LabelStyle({
           color: '#FF3500',
-          size: 12,
+          size: 14,
           angle: 0,
-          background: true,
-          backgroundColor: 'rgba(20, 20, 40, 0.92)',
-          borderRadius: 4,
           offset: { x: 0, y: 6 },
         }),
         hidden: new this.TMap.LabelStyle({
           color: 'rgba(0,0,0,0)',
           size: 1,
-          background: false,
           offset: { x: 0, y: 0 },
         }),
       },
@@ -565,11 +544,10 @@ export class OverlayManager {
       this.polylineLayer = null
       this.polylines.clear()
     }
-    if (this.labelLayer) {
-      this.labelLayer.setMap(null)
-      this.labelLayer = null
-      this.labels.clear()
+    for (const marker of this.labelMarkers.values()) {
+      marker.setMap(null)
     }
+    this.labelMarkers.clear()
   }
 
   clearAll(): void {
@@ -675,16 +653,53 @@ export class OverlayManager {
   /** 从地图移除所有图层（不清除数据），用于地图实例销毁前的清理。 */
   detachFromMap(): void {
     const layers: any[] = [
-      this.markerLayer, this.polylineLayer, this.labelLayer,
+      this.markerLayer, this.polylineLayer,
       this.polygonLayer, this.rubberBandLayer,
       this.pointMarkerLayer, this.pointLabelLayer,
     ]
     for (const layer of layers) {
       if (layer) layer.setMap(null)
     }
+    for (const marker of this.labelMarkers.values()) {
+      marker.setMap(null)
+    }
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
+
+  /** 测距距离标签：白底圆角卡片 + 深灰文字，匹配 MeasureTool 官方样式。 */
+  private _labelCardSvg(text: string): string {
+    const w = this._labelCardWidth(text)
+    const h = 22
+    // SVG 白底圆角矩形 + 文字
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+      <rect x="1" y="1" width="${w - 2}" height="${h - 2}" rx="4" fill="#FFFFFF" stroke="#CCCCCC" stroke-width="1"/>
+      <text x="${Math.round(w / 2)}" y="15" text-anchor="middle" fill="#333333" font-size="11" font-family="sans-serif">${this._xmlEscape(text)}</text>
+    </svg>`
+    return `data:image/svg+xml;base64,${btoa(svg)}`
+  }
+
+  /** 估算标签文本宽度，用于生成合适尺寸的 SVG。中文约 12px，英文/数字约 7px。 */
+  private _labelCardWidth(text: string): number {
+    let w = 0
+    for (const ch of text) {
+      w += /[\u4e00-\u9fff]/.test(ch) ? 12 : 7
+    }
+    return w + 16  // + 左右 padding
+  }
+
+  /** 转义 XML 特殊字符，防止 SVG 注入。 */
+  private _xmlEscape(s: string): string {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+  }
+
+  /** 测距标记：蓝色空心圆，匹配 TMap MeasureTool 官方样式。 */
+  private _hollowCircleSvg(): string {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14">
+      <circle cx="7" cy="7" r="5" fill="#FFFFFF" stroke="#4A90D9" stroke-width="2"/>
+    </svg>`
+    return `data:image/svg+xml;base64,${btoa(svg)}`
+  }
 
   private _markerSvg(label: string): string {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22">
