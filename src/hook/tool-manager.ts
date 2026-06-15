@@ -1,5 +1,4 @@
 import { OverlayManager } from './overlay-manager'
-import { TwoPointTool } from './tools/two-point'
 import { MultiPointTool } from './tools/multi-point'
 import { PolygonTool } from './tools/polygon'
 import { PointMarkerTool } from './tools/point-marker'
@@ -18,9 +17,11 @@ export class ToolManager {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null
   /** 上一个地图实例的覆盖物快照，用于 SPA 切换后恢复。 */
   private pendingSnapshot: OverlaySnapshotItem | null = null
+  /** 鼠标坐标推送节流定时器。 */
+  private mouseMoveTimer: ReturnType<typeof setTimeout> | null = null
+  private mouseMoveHandler: ((evt: any) => void) | null = null
 
   constructor() {
-    this.register(new TwoPointTool())
     this.register(new MultiPointTool())
     this.register(new PolygonTool())
     this.register(new PointMarkerTool())
@@ -83,7 +84,10 @@ export class ToolManager {
     // 6. 启动心跳
     this.startHeartbeat()
 
-    // 7. 通知 panel
+    // 7. 启动鼠标坐标推送
+    this.startMouseTracking()
+
+    // 8. 通知 panel
     if (isReconnect) {
       sendToPanel({ type: HookEvent.MAP_RESTORED, payload: { polygonCount: restoredPoly, pointMarkerCount: restoredPm } })
     }
@@ -95,6 +99,7 @@ export class ToolManager {
   onMapLost(): void {
     log('ToolManager.onMapLost — map instance gone')
     this.stopHeartbeat()
+    this.stopMouseTracking()
     // 保存快照（如果还没存）
     if (this.overlays && !this.pendingSnapshot) {
       this.pendingSnapshot = this.overlays.snapshot()
@@ -262,6 +267,37 @@ export class ToolManager {
       this.activeTool.reset()
     } else {
       this.overlays?.clearAll()
+    }
+  }
+
+  // ── Mouse coordinate tracking ────────────────────────────────────────────
+
+  private startMouseTracking(): void {
+    this.stopMouseTracking()
+    this.mouseMoveHandler = (evt: any) => {
+      if (this.mouseMoveTimer) return
+      this.mouseMoveTimer = setTimeout(() => {
+        this.mouseMoveTimer = null
+        try {
+          sendToPanel({
+            type: HookEvent.MOUSE_MOVE,
+            payload: { lat: evt.latLng.lat, lng: evt.latLng.lng },
+          })
+        } catch { /* 地图监听可能已失效 */ }
+      }, 50) // 50ms 节流（~20fps 坐标刷新）
+    }
+    this.map.on('mousemove', this.mouseMoveHandler)
+    log('mouse tracking started')
+  }
+
+  private stopMouseTracking(): void {
+    if (this.mouseMoveHandler && this.map) {
+      this.map.off('mousemove', this.mouseMoveHandler)
+    }
+    this.mouseMoveHandler = null
+    if (this.mouseMoveTimer) {
+      clearTimeout(this.mouseMoveTimer)
+      this.mouseMoveTimer = null
     }
   }
 }

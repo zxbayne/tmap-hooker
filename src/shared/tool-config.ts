@@ -7,12 +7,6 @@ export interface ToolConfig {
 
 export const TOOL_CONFIGS: ToolConfig[] = [
   {
-    id: 'two-point',
-    name: '两点测距',
-    icon: '📏',
-    description: '点击两点测量球面距离',
-  },
-  {
     id: 'multi-point',
     name: '多点测距',
     icon: '📐',
@@ -33,7 +27,6 @@ export const TOOL_CONFIGS: ToolConfig[] = [
 ]
 
 export const TOOL_IDS = {
-  TWO_POINT: 'two-point',
   MULTI_POINT: 'multi-point',
   POLYGON: 'polygon',
   POINT_MARKER: 'point-marker',

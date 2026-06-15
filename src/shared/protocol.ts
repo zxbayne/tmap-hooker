@@ -35,6 +35,10 @@ export const enum HookEvent {
   // 地图生命周期事件
   MAP_LOST = 'MAP_LOST',
   MAP_RESTORED = 'MAP_RESTORED',
+  // 多边形几何信息（面积/周长）
+  POLYGON_GEOMETRY = 'POLYGON_GEOMETRY',
+  // 鼠标坐标实时推送
+  MOUSE_MOVE = 'MOUSE_MOVE',
 }
 
 // Panel → Hook 命令：panel 层用户操作时发送给 hook
@@ -172,6 +176,21 @@ export interface MapRestoredPayload {
   pointMarkerCount: number
 }
 
+/** 多边形几何信息（选中/绘制/编辑/拖拽后触发）。 */
+export interface PolygonGeometryPayload {
+  id: string
+  /** 面积（平方米）。仅当顶点数 ≥ 3 时有效。 */
+  area: number
+  /** 周长（米）。 */
+  perimeter: number
+}
+
+/** 鼠标在地图上移动时的坐标（节流~200ms）。 */
+export interface MouseMovePayload {
+  lat: number
+  lng: number
+}
+
 // ── Panel → Hook payload 类型 ────────────────────────────────────────────────
 
 /** 切换工具的命令，toolId 为空字符串时表示取消激活。 */
@@ -264,6 +283,8 @@ export type HookMessage =
   | { source: typeof HOOK_SOURCE; type: HookEvent.POINT_MARKER_DELETED; payload: PointMarkerDeletedPayload }
   | { source: typeof HOOK_SOURCE; type: HookEvent.MAP_LOST }
   | { source: typeof HOOK_SOURCE; type: HookEvent.MAP_RESTORED; payload: MapRestoredPayload }
+  | { source: typeof HOOK_SOURCE; type: HookEvent.POLYGON_GEOMETRY; payload: PolygonGeometryPayload }
+  | { source: typeof HOOK_SOURCE; type: HookEvent.MOUSE_MOVE; payload: MouseMovePayload }
 
 export type PanelMessage =
   | { source: typeof PANEL_SOURCE; type: PanelCmd.PANEL_READY }

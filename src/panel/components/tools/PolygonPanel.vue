@@ -121,6 +121,11 @@
 
     <!-- 坐标导出（选中多边形时显示） -->
     <div v-if="selectedLayer && selectedLayer.coords.length > 0" class="poly-coords-export">
+      <!-- 几何信息：面积 + 周长 -->
+      <div v-if="selectedLayer.area != null" class="poly-geometry-info">
+        <span class="poly-geometry-item">面积 {{ formatArea(selectedLayer.area) }}</span>
+        <span class="poly-geometry-item">周长 {{ formatDistance(selectedLayer.perimeter!) }}</span>
+      </div>
       <div class="poly-coords-header">
         <span>坐标导出</span>
         <div class="poly-coords-fmt-bar">
@@ -187,6 +192,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick } from 'vue'
 import type { PolygonLayer } from '../../composables/useTool'
+import { formatDistance, formatArea } from '../../../shared/utils/distance'
 
 const props = defineProps<{
   polygonMode: 'idle' | 'drawing'

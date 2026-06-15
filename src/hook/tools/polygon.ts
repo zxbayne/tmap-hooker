@@ -144,6 +144,7 @@ export class PolygonTool implements ITool {
     this.polygonIds.add(id)
     this.polygonCoords.set(id, coords)
     sendToPanel({ type: HookEvent.POLYGON_DRAWN, payload: { id, count } })
+    this._sendGeometryInfo(id, coords)
     log('polygon finished, id =', id, 'points =', count)
     this.enterIdleMode()
   }
@@ -216,6 +217,7 @@ export class PolygonTool implements ITool {
     this.polygonIds.add(id)
     this.polygonCoords.set(id, points)
     sendToPanel({ type: HookEvent.POLYGON_DRAWN, payload: { id, count: points.length } })
+    this._sendGeometryInfo(id, points)
     log('polygon drawn from input, id =', id, 'points =', points.length)
   }
 
@@ -275,6 +277,7 @@ export class PolygonTool implements ITool {
       this._panToCenter(coords)
     }
     sendToPanel({ type: HookEvent.POLYGON_SELECTED, payload: { id, coords } })
+    this._sendGeometryInfo(id, coords)
     log('polygon selected by panel:', id)
   }
 
@@ -340,6 +343,7 @@ export class PolygonTool implements ITool {
     this.ctx?.overlays.setPolygonHighlight(id)
     const coords = this.polygonCoords.get(id) ?? []
     sendToPanel({ type: HookEvent.POLYGON_SELECTED, payload: { id, coords } })
+    this._sendGeometryInfo(id, coords)
     log('polygon selected:', id)
   }
 
@@ -420,6 +424,7 @@ export class PolygonTool implements ITool {
     )
     this.ctx.overlays.setPolygonHighlight(id)
     sendToPanel({ type: HookEvent.POLYGON_SELECTED, payload: { id, coords: finalCoords } })
+    this._sendGeometryInfo(id, finalCoords)
 
     this._cleanupDrag()
 
@@ -549,6 +554,7 @@ export class PolygonTool implements ITool {
     this.editingId = null
     this._registerIdleClick()
     sendToPanel({ type: HookEvent.POLYGON_EDIT_FINISHED, payload: { id, coords: finalCoords } })
+    this._sendGeometryInfo(id, finalCoords)
     log('finishEdit:', id)
   }
 
@@ -659,6 +665,26 @@ export class PolygonTool implements ITool {
     if (!this.ctx) return
     for (let i = 0; i < this.drawingPoints.length; i++) {
       this.ctx.overlays.removeMarker(`poly-drawing-${i}`)
+    }
+  }
+
+  /** 计算多边形面积和周长，并通过协议发送给 panel。 */
+  private _sendGeometryInfo(id: string, coords: LatLng[]): void {
+    if (!this.ctx || coords.length < 3) return
+    const TMap = (window as any).TMap
+    if (!TMap?.geometry) return
+    try {
+      const path = coords.map((p) => new TMap.LatLng(p.lat, p.lng))
+      const closedPath = [...path, path[0]]
+      const perimeter = TMap.geometry.computeDistance(closedPath) as number
+      const area = TMap.geometry.computeArea(closedPath) as number
+      sendToPanel({
+        type: HookEvent.POLYGON_GEOMETRY,
+        payload: { id, area, perimeter },
+      })
+      log('_sendGeometryInfo:', id, 'area:', area, 'perimeter:', perimeter)
+    } catch (e) {
+      log('_sendGeometryInfo failed:', e)
     }
   }
 }
