@@ -703,15 +703,15 @@ export class OverlayManager {
     return `data:image/svg+xml;base64,${btoa(svg)}`
   }
 
-  /** 选中点位图标：亮蓝色大图钉 + 蓝光光晕，醒目突出。 */
+  /** 选中点位图标：红色大图钉 + 红色光晕，醒目突出。 */
   private _pinHighlightSvg(): string {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="30" viewBox="0 0 24 30">
       <defs>
         <filter id="glow" x="-50%" y="-20%" width="200%" height="150%">
-          <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#4488FF" flood-opacity="0.5"/>
+          <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#FF3500" flood-opacity="0.5"/>
         </filter>
       </defs>
-      <path d="M12 0C6.48 0 2 4.48 2 10c0 7 10 20 10 20S22 17 22 10c0-5.52-4.48-10-10-10z" fill="#4488FF" stroke="#fff" stroke-width="2" filter="url(#glow)"/>
+      <path d="M12 0C6.48 0 2 4.48 2 10c0 7 10 20 10 20S22 17 22 10c0-5.52-4.48-10-10-10z" fill="#FF3500" stroke="#fff" stroke-width="2" filter="url(#glow)"/>
       <circle cx="12" cy="10" r="4" fill="#fff" opacity="0.95"/>
     </svg>`
     return `data:image/svg+xml;base64,${btoa(svg)}`
