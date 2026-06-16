@@ -10,8 +10,10 @@ export class PolygonTool implements ITool {
   readonly id = TOOL_IDS.POLYGON
 
   private ctx: ToolContext | null = null
-  /** 持久化 overlays 引用，不随 deactivate 清空，确保切工具后仍可高亮点击的图形。 */
+  /** 持久化 overlays 引用，不随 deactivate 清空，确保切工具后仍可高亮/拖拽已绘制图形。 */
   private overlays: any = null
+  /** 持久化 map 引用，同上。 */
+  private mapRef: any = null
   private mode: 'idle' | 'drawing' = 'idle'
   private drawingPoints: LatLng[] = []
   private selectedId: string | null = null
@@ -85,6 +87,7 @@ export class PolygonTool implements ITool {
   activate(ctx: ToolContext): void {
     this.ctx = ctx
     this.overlays = ctx.overlays
+    this.mapRef = ctx.map
     this.mode = 'idle'
     this._registerIdleClick()
     log('PolygonTool activated (idle mode)')
@@ -405,11 +408,11 @@ export class PolygonTool implements ITool {
     if (this.editingId !== null) return
     if (this.mode !== 'idle') return
     if (id === PolygonTool.PREVIEW_POLY_ID) return
-    if (!this.ctx) return
+    if (!this.overlays || !this.mapRef) { log('[drag] SKIP — missing overlays/mapRef'); return }
     // 如果多边形未选中，先自动选中（对齐 CircleTool 的"直接拖"体验）
     if (id !== this.selectedId) {
       this.selectedId = id
-      this.ctx.overlays.setPolygonHighlight(id)
+      this.overlays.setPolygonHighlight(id)
       const coords = this.polygonCoords.get(id) ?? []
       sendToPanel({ type: HookEvent.LAYER_SELECTED, payload: { id, data: { kind: 'polygon', coords, area: null, perimeter: null } as PolygonLayerData } })
       this._sendGeometryInfo(id, coords)
@@ -424,7 +427,7 @@ export class PolygonTool implements ITool {
     this.dragCurrentCoords = null
 
     try {
-      this.ctx.map.setDraggable(false)
+      this.mapRef.setDraggable(false)
     } catch (e) {
       log('[drag] map.setDraggable(false) threw:', e)
     }
@@ -432,15 +435,15 @@ export class PolygonTool implements ITool {
     const dragMoveLogger: Array<{ t: number; x: number; y: number }> = []
     this.dragMoveHandler = (evt: MouseEvent) => {
       // 使用 document mousemove（而非 map.on），避免 TMap overlay 层拦截 mousemove 事件
-      if (!this.ctx || !this.isDragging) return
+      if (!this.mapRef || !this.overlays || !this.isDragging) return
       dragMoveLogger.push({ t: Date.now(), x: evt.clientX, y: evt.clientY })
-      const container = this.ctx.map.getContainer()
+      const container = this.mapRef.getContainer()
       const rect = container.getBoundingClientRect()
       const TMap = (window as any).TMap
       let latLng: { lat: number; lng: number }
       try {
         const point = new TMap.Point(evt.clientX - rect.left, evt.clientY - rect.top)
-        const projected = this.ctx.map.unprojectFromContainer(point)
+        const projected = this.mapRef.unprojectFromContainer(point)
         latLng = { lat: projected.lat, lng: projected.lng }
       } catch (e: any) {
         log('[drag] unproject FAILED:', e?.message ?? e)
@@ -458,25 +461,25 @@ export class PolygonTool implements ITool {
   }
 
   private _onDragMove(evt: any): void {
-    if (!this.isDragging || !this.dragStartLatLng || !this.dragOriginalCoords || !this.draggingId || !this.ctx) return
+    if (!this.isDragging || !this.dragStartLatLng || !this.dragOriginalCoords || !this.draggingId || !this.overlays) return
     const dLat = evt.latLng.lat - this.dragStartLatLng.lat
     const dLng = evt.latLng.lng - this.dragStartLatLng.lng
     const newCoords = this.dragOriginalCoords.map((p) => ({ lat: p.lat + dLat, lng: p.lng + dLng }))
     this.dragCurrentCoords = newCoords
-    this.ctx.overlays.updatePolygonPath(this.draggingId, newCoords)
+    this.overlays.updatePolygonPath(this.draggingId, newCoords)
   }
 
   private _onDragUp(): void {
-    if (!this.isDragging || !this.dragOriginalCoords || !this.draggingId || !this.ctx) return
+    if (!this.isDragging || !this.dragOriginalCoords || !this.draggingId || !this.overlays || !this.mapRef) return
     const finalCoords = this.dragCurrentCoords ?? [...this.dragOriginalCoords]
     const id = this.draggingId
 
     this.polygonCoords.set(id, finalCoords)
-    this.ctx.overlays.addPolygon(id, finalCoords,
+    this.overlays.addPolygon(id, finalCoords,
       (clickedId) => this._onPolygonClick(clickedId),
       (clickedId, latLng) => this._onPolygonMousedown(clickedId, latLng),
     )
-    this.ctx.overlays.setPolygonHighlight(id)
+    this.overlays.setPolygonHighlight(id)
     // 内联计算 area/perimeter，避免 LAYER_SELECTED(null) + POLYGON_GEOMETRY 两步的时序依赖
     const { area, perimeter } = this._tryComputeGeometry(finalCoords)
     sendToPanel({ type: HookEvent.LAYER_SELECTED, payload: { id, data: { kind: 'polygon', coords: finalCoords, area, perimeter } as PolygonLayerData } })
@@ -485,7 +488,7 @@ export class PolygonTool implements ITool {
 
     this._cleanupDrag()
 
-    try { this.ctx.map.setDraggable(true) } catch { /* 忽略 */ }
+    try { this.mapRef.setDraggable(true) } catch { /* 忽略 */ }
 
     this._justFinishedDrag = true
     setTimeout(() => { this._justFinishedDrag = false }, 100)
