@@ -381,6 +381,7 @@ export class PolygonTool implements ITool {
   private _registerIdleClick(): void {
     if (this.idleMapClickHandler || !this.ctx) return
     this.idleMapClickHandler = (_evt: any) => {
+      if (this._justFinishedDrag) return
       if (this._polygonClickFired) {
         this._polygonClickFired = false
         return
@@ -552,12 +553,12 @@ export class PolygonTool implements ITool {
       map: this.ctx.map,
       styles: {
         default: new TMap.PolygonStyle({
-          color: 'rgba(74, 144, 217, 0.12)',
+          color: 'rgba(74, 144, 217, 0.28)',
           borderColor: '#4A90D9',
           borderWidth: 2,
         }),
         highlight: new TMap.PolygonStyle({
-          color: 'rgba(74, 144, 217, 0.3)',
+          color: 'rgba(74, 144, 217, 0.45)',
           borderColor: '#2B6CB0',
           borderWidth: 3,
         }),

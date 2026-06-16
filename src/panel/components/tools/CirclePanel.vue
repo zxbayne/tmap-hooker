@@ -8,9 +8,9 @@
       </button>
     </div>
 
-    <!-- drawing：拖拽绘制中 -->
+    <!-- drawing：点击放置圆心 -->
     <div v-else-if="circleMode === 'drawing'" class="circle-drawing">
-      <div class="circle-drawing-badge">🖱 拖拽中</div>
+      <div class="circle-drawing-badge">点击地图放置圆心</div>
       <button class="poly-btn cancel-btn" @click="$emit('cancelDrawing')">
         取消
       </button>
@@ -57,7 +57,7 @@
 
     <!-- editing：编辑模式 -->
     <div v-else-if="circleMode === 'editing'" class="circle-preview">
-      <div class="circle-edit-hint">拖动地图上的蓝色圆心手柄 / 调整下方参数</div>
+      <div class="circle-edit-hint">拖动地图上的圆形调整圆心 / 调整下方参数</div>
 
       <div class="circle-param">
         <label class="circle-param-label">半径</label>

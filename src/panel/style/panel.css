@@ -457,6 +457,34 @@
 
 .poly-draw-actions { display: flex; gap: 4px; }
 
+.poly-edit-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--c-blue-bg);
+  border: 1px solid var(--c-blue-border);
+  border-radius: 6px;
+}
+
+.poly-edit-hint {
+  font-size: 11px;
+  color: var(--c-blue);
+  text-align: center;
+}
+
+.poly-edit-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.poly-edit-actions .poly-btn {
+  padding: 7px 0;
+  font-size: 12px;
+  border-radius: 6px;
+  letter-spacing: 0.01em;
+}
+
 .poly-btn {
   flex: 1;
   padding: 4px 2px;
@@ -953,7 +981,7 @@
 .layer-list {
   margin-top: 12px;
   border-top: 1px solid var(--c-border);
-  padding-top: 8px;
+  padding: 8px 10px 6px;
 }
 
 .layer-list-header {
@@ -1002,7 +1030,7 @@
 
 .layer-selected {
   background: rgba(74, 144, 217, 0.15);
-  outline: 1px solid var(--c-accent);
+  box-shadow: inset 0 0 0 1.5px var(--c-accent);
 }
 
 .layer-hidden {
@@ -1094,7 +1122,7 @@
 /* ── 图层详情区 ─────────────────────────────────────────────────────────── */
 .layer-detail {
   border-top: 1px solid var(--c-border);
-  padding: 8px 6px 6px;
+  padding: 8px 0 2px;
   display: flex;
   flex-direction: column;
   gap: 4px;

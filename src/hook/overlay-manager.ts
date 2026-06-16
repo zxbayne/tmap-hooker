@@ -230,21 +230,21 @@ export class OverlayManager {
       map: this.map,
       styles: {
         default: new this.TMap.PolygonStyle({
-          color: 'rgba(74, 144, 217, 0.18)',
+          color: 'rgba(74, 144, 217, 0.35)',
           borderColor: '#4A90D9',
           borderWidth: 2,
           borderDashArray: [0, 0],
         }),
         highlight: new this.TMap.PolygonStyle({
-          color: 'rgba(74, 144, 217, 0.30)',
+          color: 'rgba(74, 144, 217, 0.50)',
           borderColor: '#2B6CB0',
           borderWidth: 3,
           borderDashArray: [0, 0],
         }),
-        /** 绘制中的实时预览多边形，使用更低透明度以区分已提交的多边形。 */
+        /** 绘制中的实时预览多边形，使用稍低透明度以区分已提交的多边形。 */
         preview: new this.TMap.PolygonStyle({
-          color: 'rgba(74, 144, 217, 0.12)',
-          borderColor: 'rgba(74, 144, 217, 0.7)',
+          color: 'rgba(74, 144, 217, 0.28)',
+          borderColor: 'rgba(74, 144, 217, 0.85)',
           borderWidth: 2,
           borderDashArray: [8, 6],
         }),
@@ -985,6 +985,18 @@ export class OverlayManager {
   setCircleMousedownHandler(cb: (id: string, latLng: any) => void): void {
     this.onCircleMousedown = cb
     this._attachMousedownHandler()
+  }
+
+  /**
+   * 将指定多边形切换为虚线预览样式（编辑中预览），更新路径同时沿用 preview styleId。
+   * 不影响 highlightedId，commit/cancel 时 addPolygon 会将其重置为 default。
+   */
+  setPolygonPreview(id: string): void {
+    if (!this.polygonLayer || !this.polygons.has(id)) return
+    const paths = this.polygons.get(id)!
+    if (this.polygonVisible.get(id) !== false) {
+      this.polygonLayer.updateGeometries([{ id, styleId: 'preview', paths }])
+    }
   }
 
   /** 设置多边形专有 mousedown 回调（由 PolygonTool 注册，用于拖拽移动）。 */

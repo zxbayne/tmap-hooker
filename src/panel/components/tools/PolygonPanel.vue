@@ -37,7 +37,7 @@
       <div class="poly-edit-hint">拖拽顶点修改形状</div>
       <div class="poly-edit-actions">
         <button class="poly-btn draw-btn" @click="$emit('finishEdit')">✓ 完成编辑</button>
-        <button class="poly-btn cancel-btn" @click="$emit('cancelEdit')">✗ 取消</button>
+        <button class="poly-btn cancel-btn" @click="$emit('cancelEdit')">✕ 取消</button>
       </div>
     </div>
 

@@ -4,7 +4,7 @@ import type {
   HookMessage, SegmentAddedPayload,
   CircleDrawnPayload, GenericLayer, LayerKind, LayerData,
   LayerDrawnPayload, LayerSelectedPayload, LayerEditEventPayload,
-  MeasureLayerData,
+  MeasureLayerData, CircleLayerData,
 } from '@shared/protocol'
 import { useMapBridge } from './useMapBridge'
 import { formatDistance } from '@shared/utils/distance'
@@ -251,7 +251,7 @@ export function useTool() {
       }
 
       case HookEvent.CIRCLE_CENTER_SET:
-        circleMode.value = 'drawing'
+        circleMode.value = 'placed'
         circlePreview.value = {
           id: msg.payload.id,
           lat: msg.payload.lat, lng: msg.payload.lng,
@@ -271,7 +271,6 @@ export function useTool() {
           }
           break
         }
-        if (circleMode.value === 'drawing') circleMode.value = 'placed'
         circlePreview.value.radius = p.radius
         circlePreview.value.nPoints = p.nPoints
         // placed-mode 圆心拖拽时同步更新坐标（避免 UI 显示的圆心和地图上的不一致）
@@ -345,7 +344,17 @@ export function useTool() {
       case HookEvent.LAYER_EDIT_STARTED: {
         const p = msg.payload as LayerEditEventPayload
         if (p.kind === 'polygon') { editingPolygonId.value = p.id; activeTool.value = TOOL_IDS.POLYGON }
-        if (p.kind === 'circle') { circleMode.value = 'editing'; activeTool.value = TOOL_IDS.CIRCLE }
+        if (p.kind === 'circle') {
+          circleMode.value = 'editing'
+          activeTool.value = TOOL_IDS.CIRCLE
+          // 从图层数据恢复 circlePreview，否则 CirclePanel 的 circlePreview 为 null，滑块 sendUpdate 静默失效
+          const layer = layers.value.find(l => l.id === p.id)
+          const d = layer?.data?.kind === 'circle' ? (layer.data as CircleLayerData) : null
+          if (d) {
+            circlePreview.value = { id: p.id, lat: d.center.lat, lng: d.center.lng, radius: d.radius, nPoints: d.nPoints }
+            circlePreviewGeometry.value = { area: d.area, perimeter: d.perimeter }
+          }
+        }
         if (p.kind === 'measure') { measureMode.value = 'editing'; activeTool.value = TOOL_IDS.MULTI_POINT }
         break
       }
@@ -446,7 +455,10 @@ export function useTool() {
 
   // ── 圆形工具命令 ──────────────────────────────────────────────────────────
 
-  function startDrawingCircle() { sendCmd({ type: PanelCmd.START_DRAWING_CIRCLE }) }
+  function startDrawingCircle() {
+    circleMode.value = 'drawing'
+    sendCmd({ type: PanelCmd.START_DRAWING_CIRCLE })
+  }
   function cancelDrawingCircle() {
     circleMode.value = 'idle'
     circlePreview.value = null

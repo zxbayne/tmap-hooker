@@ -29,11 +29,8 @@ export class CircleTool implements ITool {
   /** 当前预览/编辑状态。 */
   private pending: { id: string; center: LatLng; radius: number; nPoints: number } | null = null
 
-  // ── 拖拽绘制 ──
-  private mousedownHandler: ((evt: any) => void) | null = null
-  private mousemoveHandler: ((evt: any) => void) | null = null
-  private mouseupHandler: (() => void) | null = null
-  private isDragging = false
+  // ── 点击放置（click-to-place）──
+  private _clickHandler: ((evt: any) => void) | null = null
 
   // ── placed-mode 圆心拖拽 ──
   private _placedMdHandler: ((evt: any) => void) | null = null
@@ -41,15 +38,17 @@ export class CircleTool implements ITool {
   private _placedMuHandler: (() => void) | null = null
   private _placedDragging = false
 
-  // ── 已提交圆形拖拽 ──
+  // ── 已提交圆形拖拽（idle 模式）──
   private _commitDragId: string | null = null
   private _commitDragMoved = false
-  /** 拖拽起点的地图坐标（用于计算偏移量）。 */
   private _commitDragStartLatLng: { lat: number; lng: number } | null = null
-  /** 拖拽起点时的圆心坐标。 */
   private _commitDragOrigCenter: { lat: number; lng: number } | null = null
   private _commitMmHandler: ((evt: any) => void) | null = null
   private _commitMuHandler: (() => void) | null = null
+
+  // ── 编辑模式圆心拖拽 ──
+  private _editDragMmHandler: ((evt: MouseEvent) => void) | null = null
+  private _editDragMuHandler: (() => void) | null = null
 
   // ── 编辑模式 ──
   private editingId: string | null = null
@@ -58,9 +57,6 @@ export class CircleTool implements ITool {
   private editNPoints = DEFAULT_N
   /** 编辑前快照，用于 cancel 回滚。 */
   private editSnapshot: { center: LatLng; radius: number; nPoints: number } | null = null
-  /** 圆心拖拽手柄 marker id。 */
-  private centerHandleId: string | null = null
-  private dragendHandler: ((evt: any) => void) | null = null
 
   // ── 图层数据 ──
   private circleIds: Set<string> = new Set()
@@ -122,23 +118,22 @@ export class CircleTool implements ITool {
   }
 
   // ══════════════════════════════════════════════════════════════════
-  // 绘制流程（panel 驱动）
+  // 绘制流程（click-to-place）
   // ══════════════════════════════════════════════════════════════════
 
-  /** 进入绘制模式：监听 mousedown/mousemove/mouseup 用于拖拽画圆。 */
+  /** 进入绘制模式：点击地图放置圆心，半径通过 panel 调整。 */
   startDrawing(): void {
     if (this.mode !== 'idle' || !this.ctx) return
     this.mode = 'drawing'
-    this._listenDrag()
+    this._listenClick()
     log('CircleTool: enter drawing mode')
   }
 
   /** 取消绘制，回到 idle。 */
   cancelDrawing(): void {
     if (this.mode === 'idle') return
-    this._stopDrag()
+    this._stopClick()
     this._stopPlacedDrag()
-    this.isDragging = false
     if (this.pending) {
       this.ctx?.overlays.removePreviewPolygon(PREVIEW_ID)
       this.pending = null
@@ -148,79 +143,33 @@ export class CircleTool implements ITool {
   }
 
   // ══════════════════════════════════════════════════════════════════
-  // 拖拽绘制内部实现
+  // 点击放置内部实现
   // ══════════════════════════════════════════════════════════════════
 
-  private _listenDrag(): void {
+  private _listenClick(): void {
     if (!this.ctx) return
-    this.mousedownHandler = (evt: any) => this._onDragStart(evt)
-    this.mousemoveHandler = (evt: any) => this._onDragMove(evt)
-    this.mouseupHandler = () => this._onDragEnd()
-    const map = this.ctx.map
-    map.on('mousedown', this.mousedownHandler)
-    map.on('mousemove', this.mousemoveHandler)
-    map.on('mouseup', this.mouseupHandler)
-  }
-
-  private _stopDrag(): void {
-    if (!this.ctx) return
-    const map = this.ctx.map
-    if (this.mousedownHandler) { map.off('mousedown', this.mousedownHandler); this.mousedownHandler = null }
-    if (this.mousemoveHandler) { map.off('mousemove', this.mousemoveHandler); this.mousemoveHandler = null }
-    if (this.mouseupHandler) { map.off('mouseup', this.mouseupHandler); this.mouseupHandler = null }
-  }
-
-  private _onDragStart(evt: any): void {
-    if (this.mode !== 'drawing' || !this.ctx) return
-    this._stopPlacedDrag()
-    this.isDragging = true
-    const center: LatLng = { lat: evt.latLng.lat, lng: evt.latLng.lng }
-    const id = `${CIRCLE_PREFIX}${++this.idCounter}`
-    this.pending = { id, center, radius: DEFAULT_R, nPoints: DEFAULT_N }
-    this._updatePreview(center, DEFAULT_R, DEFAULT_N)
-    sendToPanel({
-      type: HookEvent.CIRCLE_CENTER_SET,
-      payload: { id, lat: center.lat, lng: center.lng, radius: DEFAULT_R, nPoints: DEFAULT_N },
-    })
-  }
-
-  private _onDragMove(evt: any): void {
-    if (!this.isDragging || !this.pending || !this.ctx) return
-    const TMap = (window as any).TMap as any
-    const from = new TMap.LatLng(this.pending.center.lat, this.pending.center.lng)
-    const to = new TMap.LatLng(evt.latLng.lat, evt.latLng.lng)
-    let radius = DEFAULT_R
-    try {
-      radius = TMap.geometry.computeDistance([from, to]) as number
-    } catch { /* fall through */ }
-    if (radius < 10) radius = 10
-    this.pending.radius = radius
-    this._updatePreview(this.pending.center, radius, this.pending.nPoints)
-    const { area, perimeter } = this._computeGeometry(
-      this._generatePoints(this.pending.center, radius, this.pending.nPoints),
-    )
-    sendToPanel({
-      type: HookEvent.CIRCLE_UPDATED,
-      payload: { id: this.pending.id, radius, nPoints: this.pending.nPoints, area, perimeter },
-    })
-  }
-
-  private _onDragEnd(): void {
-    if (!this.isDragging) return
-    this.isDragging = false
-    if (this.pending) {
-      this.mode = 'placed'
-      // 通知面板已完成放置（即使没拖拽也要发，否则面板卡在 'drawing' 态）
-      const { id, center, radius, nPoints } = this.pending
-      const points = this._generatePoints(center, radius, nPoints)
-      const { area, perimeter } = this._computeGeometry(points)
+    this._clickHandler = (evt: any) => {
+      if (this.mode !== 'drawing' || !this.ctx) return
+      this._stopClick()
+      const center: LatLng = { lat: evt.latLng.lat, lng: evt.latLng.lng }
+      const id = `${CIRCLE_PREFIX}${++this.idCounter}`
+      this.pending = { id, center, radius: DEFAULT_R, nPoints: DEFAULT_N }
+      this._updatePreview(center, DEFAULT_R, DEFAULT_N)
       sendToPanel({
-        type: HookEvent.CIRCLE_UPDATED,
-        payload: { id, radius, nPoints, area, perimeter, lat: center.lat, lng: center.lng },
+        type: HookEvent.CIRCLE_CENTER_SET,
+        payload: { id, lat: center.lat, lng: center.lng, radius: DEFAULT_R, nPoints: DEFAULT_N },
       })
-      log('CircleTool: placed, center=', this.pending.center, 'radius=', this.pending.radius)
+      this.mode = 'placed'
+      this._listenPlacedDrag()
+      log('CircleTool: center placed at', center)
     }
-    this._listenPlacedDrag()
+    this.ctx.map.on('click', this._clickHandler)
+  }
+
+  private _stopClick(): void {
+    if (!this.ctx || !this._clickHandler) return
+    this.ctx.map.off('click', this._clickHandler)
+    this._clickHandler = null
   }
 
   // ── placed-mode 圆心拖拽 ──────────────────────────────────────────────────
@@ -246,7 +195,6 @@ export class CircleTool implements ITool {
       const { area, perimeter } = this._computeGeometry(points)
       sendToPanel({
         type: HookEvent.CIRCLE_UPDATED,
-        // 补充 lat/lng，让 panel 端 circlePreview 坐标实时跟随圆心拖拽
         payload: { id: this.pending.id, radius: this.pending.radius, nPoints: this.pending.nPoints, area, perimeter, lat: center.lat, lng: center.lng } as any,
       })
     }
@@ -308,11 +256,10 @@ export class CircleTool implements ITool {
 
   finishCircle(): void {
     if (!this.pending || !this.ctx) return
-    this._stopDrag()
+    this._stopClick()
     this._stopPlacedDrag()
     const { id, center, radius, nPoints } = this.pending
     const points = this._generatePoints(center, radius, nPoints)
-    // 先清理预览多边形（circle-preview），再添加正式多边形
     this.ctx.overlays.removePreviewPolygon(PREVIEW_ID)
     this.ctx.overlays.addPolygon(id, points, () => {}, undefined)
     this.circleIds.add(id)
@@ -342,13 +289,12 @@ export class CircleTool implements ITool {
     this.editRadius = params.radius
     this.editNPoints = params.nPoints
     this.editSnapshot = { center: { ...center }, radius: params.radius, nPoints: params.nPoints }
-    this._showCenterHandle()
     this._updateEditPreview()
     sendToPanel({ type: HookEvent.LAYER_EDIT_STARTED, payload: { id, kind: 'circle' } })
     log('CircleTool startEditCircle:', id)
   }
 
-  /** 编辑中被 panel 拖拽圆心或调滑块时调用。 */
+  /** 编辑中被 panel 调滑块时调用（center 来自拖拽时内部更新，无需 panel 传入）。 */
   updateEditCircle(center?: LatLng, radius?: number, nPoints?: number): void {
     if (!this.editingId || !this.ctx) return
     if (center) this.editCenter = center
@@ -370,9 +316,9 @@ export class CircleTool implements ITool {
     this.circleParams.set(id, { radius: this.editRadius, nPoints: this.editNPoints })
     const points = this._generatePoints(this.editCenter, this.editRadius, this.editNPoints)
     this.circleCoords.set(id, points)
-    // 直接更新正式图层，不需要走 setPreviewPolygon（会污染 previewPaths 缓存）
     this.ctx?.overlays.addPolygon(id, points, () => {}, undefined)
-    this._removeCenterHandle()
+    this.ctx?.overlays.setPolygonHighlight(null)
+    this._stopEditCenterDrag()
     const { area, perimeter } = this._computeGeometry(points)
     sendToPanel({ type: HookEvent.LAYER_EDIT_COMMITTED, payload: { id, kind: 'circle' } })
     sendToPanel({
@@ -392,9 +338,9 @@ export class CircleTool implements ITool {
     this.circleParams.set(id, { radius: snap.radius, nPoints: snap.nPoints })
     const points = this._generatePoints(snap.center, snap.radius, snap.nPoints)
     this.circleCoords.set(id, points)
-    // 直接更新正式图层，不需要走 setPreviewPolygon（会污染 previewPaths 缓存）
     this.ctx?.overlays.addPolygon(id, points, () => {}, undefined)
-    this._removeCenterHandle()
+    this.ctx?.overlays.setPolygonHighlight(null)
+    this._stopEditCenterDrag()
     sendToPanel({ type: HookEvent.LAYER_EDIT_CANCELLED, payload: { id, kind: 'circle' } })
     this.editingId = null
     this.editSnapshot = null
@@ -402,77 +348,79 @@ export class CircleTool implements ITool {
   }
 
   // ══════════════════════════════════════════════════════════════════
-  // 圆心拖拽手柄
+  // 编辑模式圆心拖拽（直接拖拽地图上的圆形）
   // ══════════════════════════════════════════════════════════════════
 
-  private _showCenterHandle(): void {
-    if (!this.editCenter || !this.ctx) return
-    const TMap = (window as any).TMap as any
-    this.centerHandleId = '__tmh_circle_center_handle__'
-    const existing = this.ctx.overlays as any
-    // 用 MultiMarker 放一个可拖拽蓝点
-    const styles = {
-      [this.centerHandleId]: new TMap.MarkerStyle({
-        width: 16,
-        height: 16,
-        anchor: { x: 8, y: 8 },
-        src: this._centerPinSvg(),
-      }),
+  private _startEditCenterDrag(latLng: any): void {
+    if (!this.editCenter || !this.mapRef || !this.overlays) return
+    const origCenter = { ...this.editCenter }
+    const startLatLng = { lat: latLng.lat, lng: latLng.lng }
+
+    try { this.mapRef.setDraggable(false) } catch { /* ignore */ }
+
+    this._editDragMmHandler = (evt: MouseEvent) => {
+      if (!this.mapRef) return
+      const container = this.mapRef.getContainer()
+      const rect = container.getBoundingClientRect()
+      const TMap = (window as any).TMap
+      let lat: number, lng: number
+      try {
+        const point = new TMap.Point(evt.clientX - rect.left, evt.clientY - rect.top)
+        const projected = this.mapRef.unprojectFromContainer(point)
+        lat = projected.lat
+        lng = projected.lng
+      } catch { return }
+      const dLat = lat - startLatLng.lat
+      const dLng = lng - startLatLng.lng
+      this.editCenter = { lat: origCenter.lat + dLat, lng: origCenter.lng + dLng }
+      this._updateEditPreview()
     }
-    // 通过 overlays 的 markerLayer 注入
-    const layer = (this.ctx.overlays as any).markerLayer
-    if (!layer) return
-    // 借用一个直连 geometry
-    const geometries = [{
-      id: this.centerHandleId,
-      styleId: this.centerHandleId,
-      position: new TMap.LatLng(this.editCenter.lat, this.editCenter.lng),
-    }]
-    if (!layer._centerHandleGeoms) {
-      layer.add(geometries)
-      layer._centerHandleGeoms = true
-      layer.setStyles(styles)
-    } else {
-      layer.updateGeometries(geometries)
+
+    this._editDragMuHandler = () => {
+      document.removeEventListener('mousemove', this._editDragMmHandler!)
+      document.removeEventListener('mouseup', this._editDragMuHandler!)
+      try { this.mapRef?.setDraggable(true) } catch { /* ignore */ }
+      this._editDragMmHandler = null
+      this._editDragMuHandler = null
+      if (this.editCenter && this.editingId) {
+        const points = this._generatePoints(this.editCenter, this.editRadius, this.editNPoints)
+        const { area, perimeter } = this._computeGeometry(points)
+        sendToPanel({
+          type: HookEvent.CIRCLE_UPDATED,
+          payload: { id: this.editingId, radius: this.editRadius, nPoints: this.editNPoints, area, perimeter },
+        })
+        log('CircleTool: edit center dragged to', this.editCenter)
+      }
     }
-    // 拖拽结束回调
-    this.dragendHandler = (evt: any) => {
-      if (!evt.geometry) return
-      const pos = evt.geometry.position
-      this.editCenter = { lat: pos.lat, lng: pos.lng }
-      this.updateEditCircle(this.editCenter)
-    }
-    layer.on('dragend', this.dragendHandler)
+
+    document.addEventListener('mousemove', this._editDragMmHandler)
+    document.addEventListener('mouseup', this._editDragMuHandler)
   }
 
-  private _removeCenterHandle(): void {
-    const layer = (this.ctx?.overlays as any)?.markerLayer
-    if (!layer || !this.centerHandleId) return
-    if (this.dragendHandler) {
-      layer.off('dragend', this.dragendHandler)
-      this.dragendHandler = null
+  private _stopEditCenterDrag(): void {
+    if (this._editDragMmHandler) {
+      document.removeEventListener('mousemove', this._editDragMmHandler)
+      this._editDragMmHandler = null
     }
-    layer.remove([this.centerHandleId])
-    layer._centerHandleGeoms = false
-    this.centerHandleId = null
+    if (this._editDragMuHandler) {
+      document.removeEventListener('mouseup', this._editDragMuHandler)
+      this._editDragMuHandler = null
+    }
+    try { this.mapRef?.setDraggable(true) } catch { /* ignore */ }
   }
 
-  private _centerPinSvg(): string {
-    return 'data:image/svg+xml,' + encodeURIComponent(
-      `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">`
-      + `<circle cx="8" cy="8" r="6" fill="#4A90D9" stroke="#fff" stroke-width="2"/>`
-      + `</svg>`,
-    )
-  }
+  // ══════════════════════════════════════════════════════════════════
+  // 圆形点击 / mousedown 回调
+  // ══════════════════════════════════════════════════════════════════
 
   private _onCircleClick(id: string): void {
     log('[circle] click — id:', id, 'editing:', !!this.editingId)
     if (!this.circleIds.has(id)) return
     if (!this.overlays) return
+    if (this.editingId === id) return  // 编辑中不重复触发选中
     const center = this.circleCenters.get(id)
     const params = this.circleParams.get(id)
     if (!center || !params) return
-    // 地图高亮（复用 polygonLayer 的 highlight 样式）
     this.overlays.setPolygonHighlight(id)
     const points = this.circleCoords.get(id)!
     const { area, perimeter } = this._computeGeometry(points)
@@ -486,9 +434,17 @@ export class CircleTool implements ITool {
   private _onCircleMousedown(id: string, latLng: any): void {
     log('[circle] mousedown — id:', id, 'editing:', !!this.editingId)
     if (!this.circleIds.has(id) || !this.overlays || !this.mapRef) return
-    // 编辑模式下由 center-handle 拖拽处理，不启动 commit-drag
-    if (this.editingId) { log('[circle] mousedown SKIP — editing'); return }
-    // 自动选中并高亮（对齐多边形拖拽体验）
+
+    // 编辑模式：拖拽圆形调整圆心
+    if (this.editingId === id) {
+      this._startEditCenterDrag(latLng)
+      return
+    }
+
+    // 其他圆形正在编辑，忽略
+    if (this.editingId) { log('[circle] mousedown SKIP — editing other'); return }
+
+    // idle 模式：拖拽已提交圆形移动位置
     this.overlays.setPolygonHighlight(id)
     const origCenter = this.circleCenters.get(id)
     if (!origCenter) { log('[circle] mousedown SKIP — no origCenter'); return }
@@ -496,11 +452,9 @@ export class CircleTool implements ITool {
     this._commitDragMoved = false
     this._commitDragStartLatLng = { lat: latLng.lat, lng: latLng.lng }
     this._commitDragOrigCenter = { ...origCenter }
-    // 禁用地图拖拽（与多边形拖拽对齐）
-    try { this.mapRef.setDraggable(false) } catch { /* 忽略 */ }
+    try { this.mapRef.setDraggable(false) } catch { /* ignore */ }
     this._commitMmHandler = (evt: MouseEvent) => {
       if (!this._commitDragId || !this.mapRef || !this._commitDragStartLatLng || !this._commitDragOrigCenter) return
-      // 使用 document mousemove（而非 map.on），避免 TMap overlay 层拦截
       const container = this.mapRef.getContainer()
       const rect = container.getBoundingClientRect()
       const TMap = (window as any).TMap
@@ -515,7 +469,6 @@ export class CircleTool implements ITool {
         return
       }
       this._commitDragMoved = true
-      // offset-based：圆心 = 原始圆心 + (当前鼠标 - 拖拽起点)
       const dLat = lat - this._commitDragStartLatLng.lat
       const dLng = lng - this._commitDragStartLatLng.lng
       const center = {
@@ -529,7 +482,7 @@ export class CircleTool implements ITool {
       const polyLayer = this.overlays.getPolygonLayer()
       if (polyLayer) {
         const path = this._tmapClosedPath(points, TMap)
-        polyLayer.updateGeometries([{ id: this._commitDragId, styleId: 'default', paths: [path] }])
+        polyLayer.updateGeometries([{ id: this._commitDragId, styleId: 'highlight', paths: [path] }])
       }
     }
     this._commitMuHandler = () => {
@@ -537,14 +490,13 @@ export class CircleTool implements ITool {
       if (!this._commitDragId || !this.mapRef) return
       document.removeEventListener('mousemove', this._commitMmHandler!)
       document.removeEventListener('mouseup', this._commitMuHandler!)
-      try { this.mapRef.setDraggable(true) } catch { /* 忽略 */ }
+      try { this.mapRef.setDraggable(true) } catch { /* ignore */ }
       if (this._commitDragMoved) {
         const center = this.circleCenters.get(this._commitDragId)!
         const params = this.circleParams.get(this._commitDragId)!
         const points = this.circleCoords.get(this._commitDragId)!
         const { area, perimeter } = this._computeGeometry(points)
         this.overlays.addPolygon(this._commitDragId, points, () => {}, undefined)
-        // 拖拽结束后恢复高亮（addPolygon 以 'default' 重建，需要补 highlight）
         this.overlays.setPolygonHighlight(this._commitDragId)
         sendToPanel({
           type: HookEvent.LAYER_DRAWN,
@@ -571,10 +523,8 @@ export class CircleTool implements ITool {
   }
 
   private _cancelCommitDrag(): void {
-    if (this._commitDragId && this.mapRef) {
-      if (this._commitMmHandler) document.removeEventListener('mousemove', this._commitMmHandler)
-      if (this._commitMuHandler) document.removeEventListener('mouseup', this._commitMuHandler)
-    }
+    if (this._commitMmHandler) document.removeEventListener('mousemove', this._commitMmHandler)
+    if (this._commitMuHandler) document.removeEventListener('mouseup', this._commitMuHandler)
     this._commitDragId = null
     this._commitDragStartLatLng = null
     this._commitDragOrigCenter = null
@@ -595,11 +545,6 @@ export class CircleTool implements ITool {
     return { center, ...params }
   }
 
-  /**
-   * 导出所有已提交圆形的内部状态，供 ToolManager 补充到快照里。
-   * overlay-manager.snapshot() 只保存几何（polygon 形式），
-   * 丢失了 center/radius/nPoints，SPA 恢复后圆形无法再交互。
-   */
   getAllCircles(): Array<{ id: string; center: LatLng; radius: number; nPoints: number }> {
     const result: Array<{ id: string; center: LatLng; radius: number; nPoints: number }> = []
     for (const id of this.circleIds) {
@@ -612,25 +557,17 @@ export class CircleTool implements ITool {
     return result
   }
 
-  /**
-   * SPA 切换后地图重建，从快照恢复 CircleTool 内部状态。
-   * overlay-manager.restore() 会重建多边形图层（几何），这里只补充内部 Map。
-   * 同时重新注册点击 / mousedown 回调，让圆形可交互。
-   * 注意：此方法不依赖 this.ctx，直接接收外部 ctx 参数，避免 activate/deactivate 的 ctx 生命周期问题。
-   */
   registerFromSnapshot(
     items: Array<{ id: string; center: LatLng; radius: number; nPoints: number }>,
     ctx: ToolContext,
   ): void {
     for (const item of items) {
       const points = this._generatePoints(item.center, item.radius, item.nPoints)
-      // 关键：把圆形多边形画回地图上，否则图层上没有几何体，点击事件无对象可响应
       ctx.overlays.addPolygon(item.id, points, () => {}, undefined)
       this.circleIds.add(item.id)
       this.circleCenters.set(item.id, item.center)
       this.circleParams.set(item.id, { radius: item.radius, nPoints: item.nPoints })
       this.circleCoords.set(item.id, points)
-      // 回放 LAYER_DRAWN 让 Panel 重建图层列表
       const { area, perimeter } = points.length >= 3 ? this._computeGeometry(points) : { area: 0, perimeter: 0 }
       sendToPanel({
         type: HookEvent.LAYER_DRAWN,
@@ -641,7 +578,6 @@ export class CircleTool implements ITool {
         },
       })
     }
-    // 确保圆形点击和拖拽回调已注册到 overlay-manager
     ctx.overlays.setCircleClickHandler((id: string) => {
       if (!this.circleIds.has(id)) return
       const info = this.getCircleInfo(id)
@@ -655,7 +591,6 @@ export class CircleTool implements ITool {
     })
     ctx.overlays.setCircleMousedownHandler((id: string, latLng: any) => {
       if (!this.ctx) {
-        // CircleTool 尚未被 setTool 激活，先临时设置 ctx 以支持拖拽
         this.ctx = ctx
       }
       this._onCircleMousedown(id, latLng)
@@ -666,7 +601,7 @@ export class CircleTool implements ITool {
   getMode(): CircleMode { return this.mode }
 
   // ══════════════════════════════════════════════════════════════════
-  // 几何计算（与旧版相同）
+  // 几何计算
   // ══════════════════════════════════════════════════════════════════
 
   private _updatePreview(center: LatLng, radius: number, nPoints: number): void {
@@ -674,10 +609,16 @@ export class CircleTool implements ITool {
     this.ctx?.overlays.setPreviewPolygon(PREVIEW_ID, points, () => {})
   }
 
+  /**
+   * 更新编辑中圆形的地图视觉。
+   * 先 addPolygon（upsert）写入新路径到 polygons 缓存，
+   * 再用 setPolygonPreview 切换为虚线预览样式（与新建圆形一致）。
+   */
   private _updateEditPreview(): void {
-    if (!this.editCenter || !this.editingId) return
+    if (!this.editCenter || !this.editingId || !this.ctx) return
     const points = this._generatePoints(this.editCenter, this.editRadius, this.editNPoints)
-    this.ctx?.overlays.setPreviewPolygon(this.editingId, points, () => {}, undefined)
+    this.ctx.overlays.addPolygon(this.editingId, points, () => {}, undefined)
+    this.ctx.overlays.setPolygonPreview(this.editingId)
   }
 
   private _generatePoints(center: LatLng, radius: number, n: number): LatLng[] {
@@ -735,9 +676,8 @@ export class CircleTool implements ITool {
   }
 
   private _cleanupAll(): void {
-    this._stopDrag()
+    this._stopClick()
     this._stopPlacedDrag()
-    this.isDragging = false
-    this._removeCenterHandle()
+    this._stopEditCenterDrag()
   }
 }
