@@ -87,6 +87,10 @@ export class ToolManager {
         this.overlays!.restore(snap, clickCb, mdCb, (id: string) => {
           sendToPanel({ type: HookEvent.LAYER_SELECTED, payload: { id } })
         })
+        // 恢复多边形内部状态（polygonCoords）+ 回放 LAYER_DRAWN 给 Panel
+        if (restoredPoly > 0) {
+          polygonTool?.registerFromRestore(snap.polygons)
+        }
         // 恢复圆形内部状态，让已提交的圆形可以再次被点击/拖动/编辑
         if (restoredCircles > 0) {
           const ct = this.tools.get(TOOL_IDS.CIRCLE) as CircleTool | undefined

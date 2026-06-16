@@ -196,6 +196,9 @@ export interface CircleUpdatedPayload {
   nPoints: number
   area: number
   perimeter: number
+  /** placed-mode 圆心拖拽 / 放置完成后携带，让 panel 端 circlePreview 坐标保持同步。 */
+  lat?: number
+  lng?: number
 }
 
 export interface CircleDrawnPayload {

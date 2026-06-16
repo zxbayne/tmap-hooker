@@ -1,4 +1,5 @@
 import { HookEvent, sendToPanel } from '@shared/protocol'
+import type { LayerKind } from '@shared/protocol'
 import { TOOL_IDS } from '@shared/tool-config'
 import { log } from '../logger'
 import type { ITool, ToolContext } from './types'
@@ -592,10 +593,22 @@ export class CircleTool implements ITool {
   ): void {
     for (const item of items) {
       const points = this._generatePoints(item.center, item.radius, item.nPoints)
+      // 关键：把圆形多边形画回地图上，否则图层上没有几何体，点击事件无对象可响应
+      ctx.overlays.addPolygon(item.id, points, () => {}, undefined)
       this.circleIds.add(item.id)
       this.circleCenters.set(item.id, item.center)
       this.circleParams.set(item.id, { radius: item.radius, nPoints: item.nPoints })
       this.circleCoords.set(item.id, points)
+      // 回放 LAYER_DRAWN 让 Panel 重建图层列表
+      const { area, perimeter } = points.length >= 3 ? this._computeGeometry(points) : { area: 0, perimeter: 0 }
+      sendToPanel({
+        type: HookEvent.LAYER_DRAWN,
+        payload: {
+          id: item.id,
+          kind: 'circle' as LayerKind,
+          data: { kind: 'circle', center: item.center, radius: item.radius, nPoints: item.nPoints, area, perimeter },
+        },
+      })
     }
     // 确保圆形点击和拖拽回调已注册到 overlay-manager
     ctx.overlays.setCircleClickHandler((id: string) => {

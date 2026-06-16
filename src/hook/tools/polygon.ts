@@ -58,6 +58,28 @@ export class PolygonTool implements ITool {
     return (id, latLng) => this._onPolygonMousedown(id, latLng)
   }
 
+  /**
+   * SPA 切换后从快照恢复 PolygonTool 内部状态。
+   * overlay-manager.restore() 只重建了图层几何体和内部 polygons Map，
+   * PolygonTool.polygonCoords 和 Panel 的 layers 列表需要重新同步。
+   */
+  registerFromRestore(items: Array<{ id: string; points: LatLng[] }>): void {
+    for (const item of items) {
+      this.polygonCoords.set(item.id, item.points)
+      // 回放 LAYER_DRAWN 让 Panel 重建图层列表
+      const { area, perimeter } = this._tryComputeGeometry(item.points)
+      sendToPanel({
+        type: HookEvent.LAYER_DRAWN,
+        payload: {
+          id: item.id,
+          kind: 'polygon' as LayerKind,
+          data: { kind: 'polygon', coords: item.points, area, perimeter } as PolygonLayerData,
+        },
+      })
+    }
+    log('PolygonTool.registerFromRestore:', items.length, 'polygons')
+  }
+
   activate(ctx: ToolContext): void {
     this.ctx = ctx
     this.mode = 'idle'
