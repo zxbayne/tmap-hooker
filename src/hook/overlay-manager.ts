@@ -1,5 +1,6 @@
 import type { LatLng } from '@shared/utils/parse-coords'
 import type { OverlaySnapshotItem } from '@shared/protocol'
+import { log } from './logger'
 
 /**
  * 管理地图上所有覆盖物图层（标记、折线、标签、多边形、橡皮筋线）。
@@ -45,6 +46,29 @@ export class OverlayManager {
   private onPolygonClick: ((id: string) => void) | null = null
   /** 多边形 mousedown 回调，用于实现拖动。 */
   private onPolygonMousedown: ((id: string, latLng: any) => void) | null = null
+
+  /** 圆形专有回调（按 circle- 前缀路由，不与多边形回调混淆）。 */
+  private onCircleClick: ((id: string) => void) | null = null
+  private onCircleMousedown: ((id: string, latLng: any) => void) | null = null
+
+  /** mousedown handler 是否已绑定到 polygonLayer（只绑一次）。 */
+  private _mousedownAttached = false
+
+  // ── Measure layers (persistent) ────────────────────────────────────────────
+
+  /** 测距折线图层（线、距离标签、顶点标记）。 */
+  private measurePolylineLayer: any = null
+  private measureMarkerLayer: any = null
+  /** 每条测距的标签集（key=measureId, value=标签 MultiMarker 实例数组）。 */
+  private measureLabelMarkers: Map<string, any[]> = new Map()
+  /** 每条测距的顶点坐标（key=measureId）。 */
+  private measures: Map<string, LatLng[]> = new Map()
+  /** 每条测距的可见状态。 */
+  private measureVisible: Map<string, boolean> = new Map()
+  /** 当前高亮测距 id。 */
+  private highlightedMeasureId: string | null = null
+  /** 测距点击回调。 */
+  private onMeasureClick: ((id: string) => void) | null = null
 
   constructor(map: any, TMap: any) {
     this.map = map
@@ -166,12 +190,23 @@ export class OverlayManager {
   // ── Polygons ──────────────────────────────────────────────────────────────
 
   private _attachMousedownHandler(): void {
+    // 只绑定一次（mousedown handler 内部通过 prefix 路由到不同工具的 callback）
+    if (this._mousedownAttached || !this.polygonLayer) {
+      log('[overlay] _attachMousedownHandler SKIP — attached:', this._mousedownAttached, 'layer:', !!this.polygonLayer)
+      return
+    }
+    this._mousedownAttached = true
+    log('[overlay] _attachMousedownHandler DONE — mousedown listener registered')
     this.polygonLayer.on('mousedown', (evt: any) => {
       const id: string = evt.geometry?.id
-      if (id) {
-        evt.originalEvent?.stopPropagation()
-        this.onPolygonMousedown?.(id, evt.latLng)
+      log('[overlay] mousedown event:', id, 'circleCb:', !!this.onCircleMousedown, 'polyCb:', !!this.onPolygonMousedown)
+      if (!id) return
+      evt.originalEvent?.stopPropagation()
+      if (id.startsWith('circle-') && this.onCircleMousedown) {
+        this.onCircleMousedown(id, evt.latLng)
+        return
       }
+      this.onPolygonMousedown?.(id, evt.latLng)
     })
   }
 
@@ -181,11 +216,10 @@ export class OverlayManager {
     initialGeometries?: any[],
   ) {
     if (this.polygonLayer) {
-      if (onMousedownCb && !this.onPolygonMousedown) {
-        this.onPolygonMousedown = onMousedownCb
-        this._attachMousedownHandler()
-      }
-      // 已存在图层时，通过 add 追加初始几何体
+      // 图层已存在：不覆盖 onClickCb（CircleTool 用空回调，会破坏 PolygonTool 的真实回调）;
+      // mousedown 回调可安全更新；初始几何体仅追加。
+      if (onMousedownCb) this.onPolygonMousedown = onMousedownCb
+      this._attachMousedownHandler()
       if (initialGeometries && initialGeometries.length > 0) {
         this.polygonLayer.add(initialGeometries)
       }
@@ -196,21 +230,21 @@ export class OverlayManager {
       map: this.map,
       styles: {
         default: new this.TMap.PolygonStyle({
-          color: 'rgba(74, 144, 217, 0.12)',
+          color: 'rgba(74, 144, 217, 0.35)',
           borderColor: '#4A90D9',
           borderWidth: 2,
           borderDashArray: [0, 0],
         }),
         highlight: new this.TMap.PolygonStyle({
-          color: 'rgba(74, 144, 217, 0.25)',
+          color: 'rgba(74, 144, 217, 0.50)',
           borderColor: '#2B6CB0',
           borderWidth: 3,
           borderDashArray: [0, 0],
         }),
-        /** 绘制中的实时预览多边形，使用更低透明度以区分已提交的多边形。 */
+        /** 绘制中的实时预览多边形，使用稍低透明度以区分已提交的多边形。 */
         preview: new this.TMap.PolygonStyle({
-          color: 'rgba(74, 144, 217, 0.06)',
-          borderColor: 'rgba(74, 144, 217, 0.5)',
+          color: 'rgba(74, 144, 217, 0.28)',
+          borderColor: 'rgba(74, 144, 217, 0.85)',
           borderWidth: 2,
           borderDashArray: [8, 6],
         }),
@@ -227,15 +261,20 @@ export class OverlayManager {
     this.onPolygonClick = onClickCb
     this.polygonLayer.on('click', (evt: any) => {
       const id: string = evt.geometry?.id
-      if (id) this.onPolygonClick?.(id)
+      if (!id) return
+      if (id.startsWith('circle-') && this.onCircleClick) {
+        this.onCircleClick(id)
+        return
+      }
+      this.onPolygonClick?.(id)
     })
     // 将插件多边形图层提到最高层级，确保点击事件不会
     // 被页面自身的多边形截获
     this.polygonLayer.setZIndex(9999)
     if (onMousedownCb) {
       this.onPolygonMousedown = onMousedownCb
-      this._attachMousedownHandler()
     }
+    this._attachMousedownHandler()
   }
 
   private _closedPath(points: LatLng[]): any[] {
@@ -252,6 +291,9 @@ export class OverlayManager {
    */
   addPolygon(id: string, points: LatLng[], onClickCb: (id: string) => void, onMousedownCb?: (id: string, latLng: any) => void): void {
     this.ensurePolygonLayer(onClickCb, onMousedownCb)
+    // 强设 mousedown 回调：确保即使 polygonLayer 在预览阶段先创建（丢失了 mousedown 回调），
+    // 此处 addPolygon 也会把回调补上。
+    if (onMousedownCb) this.setPolygonMousedownHandler(onMousedownCb)
 
     const path = this._closedPath(points)
     const geometry = { id, styleId: 'default', paths: [path] }
@@ -530,6 +572,225 @@ export class OverlayManager {
     }
   }
 
+  // ── Measure layers (persistent) ────────────────────────────────────────────
+
+  private ensureMeasurePolylineLayer() {
+    if (this.measurePolylineLayer) return
+    this.measurePolylineLayer = new this.TMap.MultiPolyline({
+      id: 'tmap-hooker-measure-lines',
+      map: this.map,
+      styles: {
+        default: new this.TMap.PolylineStyle({
+          color: '#4A90D9',
+          width: 2,
+          lineCap: 'butt',
+          dashArray: [10, 6],
+        }),
+        highlight: new this.TMap.PolylineStyle({
+          color: '#2B6CB0',
+          width: 3,
+          lineCap: 'butt',
+          dashArray: [0, 0],
+        }),
+        hidden: new this.TMap.PolylineStyle({
+          color: 'rgba(0,0,0,0)',
+          width: 1,
+          dashArray: [0, 0],
+        }),
+      },
+      geometries: [],
+    })
+    this.measurePolylineLayer.setZIndex(9995)
+    this.measurePolylineLayer.on('click', (evt: any) => {
+      const id: string = evt.geometry?.id
+      if (id) this.onMeasureClick?.(id)
+    })
+  }
+
+  private ensureMeasureMarkerLayer() {
+    if (this.measureMarkerLayer) return
+    this.measureMarkerLayer = new this.TMap.MultiMarker({
+      id: 'tmap-hooker-measure-markers',
+      map: this.map,
+      styles: {
+        default: new this.TMap.MarkerStyle({
+          width: 14,
+          height: 14,
+          anchor: { x: 7, y: 7 },
+          src: this._hollowCircleSvg(),
+        }),
+        hidden: new this.TMap.MarkerStyle({
+          width: 1,
+          height: 1,
+          anchor: { x: 0, y: 0 },
+          src: this._pinSvg('rgba(0,0,0,0)'),
+        }),
+      },
+      geometries: [],
+    })
+    this.measureMarkerLayer.setZIndex(9994)
+  }
+
+  /** 新建或更新一条测距图层（折线 + 顶点标记 + 距离标签）。 */
+  addMeasure(
+    id: string,
+    points: LatLng[],
+    segmentDistances: number[],
+    onClickCb: (id: string) => void,
+  ): void {
+    if (points.length < 2) return
+    this.onMeasureClick = onClickCb
+    this.ensureMeasurePolylineLayer()
+    this.ensureMeasureMarkerLayer()
+
+    const path = points.map((p) => new this.TMap.LatLng(p.lat, p.lng))
+    const styleId = this.highlightedMeasureId === id ? 'highlight' : 'default'
+    const isUpdate = this.measures.has(id)
+    const oldPoints = isUpdate ? this.measures.get(id)! : null
+
+    // 折线：所有点连成一条
+    const lineGeo = { id, styleId, paths: [path] }
+    if (isUpdate) {
+      this.measurePolylineLayer.updateGeometries([lineGeo])
+    } else {
+      this.measurePolylineLayer.add([lineGeo])
+    }
+
+    this.measures.set(id, [...points])
+    this.measureVisible.set(id, true)
+
+    // 添加顶点标记
+    const markerGeos = points.map((p, i) => ({
+      id: `${id}-v-${i}`,
+      styleId: 'default',
+      position: new this.TMap.LatLng(p.lat, p.lng),
+    }))
+    if (this.measureMarkerLayer) {
+      if (isUpdate && oldPoints) {
+        // 移除旧的顶点标记（按旧的顶点数）
+        const oldIds = oldPoints.map((_p: LatLng, i: number) => `${id}-v-${i}`)
+        this.measureMarkerLayer.remove(oldIds)
+      }
+      this.measureMarkerLayer.add(markerGeos)
+    }
+
+    // 距离标签：每段中点
+    this._updateMeasureLabels(id, points, segmentDistances)
+  }
+
+  /** 更新测距距离标签。 */
+  private _updateMeasureLabels(id: string, points: LatLng[], segmentDistances: number[]): void {
+    this._destroyMeasureLabels(id)
+    const labels: any[] = []
+    for (let i = 0; i < points.length - 1; i++) {
+      const a = points[i]
+      const b = points[i + 1]
+      const midLat = (a.lat + b.lat) / 2
+      const midLng = (a.lng + b.lng) / 2
+      const dist = segmentDistances[i] ?? 0
+      let text: string
+      if (dist >= 1000) {
+        text = `${(dist / 1000).toFixed(2)} km`
+      } else {
+        text = `${Math.round(dist)} m`
+      }
+      const svg = this._labelCardSvg(text)
+      const w = this._labelCardWidth(text)
+      const labelLayer = new this.TMap.MultiMarker({
+        map: this.map,
+        styles: {
+          default: new this.TMap.MarkerStyle({
+            width: w,
+            height: 24,
+            anchor: { x: Math.round(w / 2), y: 30 },
+            src: svg,
+          }),
+        },
+        geometries: [{
+          id: `${id}-label-${i}`,
+          styleId: 'default',
+          position: new this.TMap.LatLng(midLat, midLng),
+        }],
+      })
+      labels.push(labelLayer)
+    }
+    this.measureLabelMarkers.set(id, labels)
+  }
+
+  /** 销毁某条测距的所有标签。 */
+  private _destroyMeasureLabels(id: string): void {
+    const labels = this.measureLabelMarkers.get(id)
+    if (!labels) return
+    for (const l of labels) l.setMap(null)
+    this.measureLabelMarkers.delete(id)
+  }
+
+  /** 移除测距图层。 */
+  removeMeasure(id: string): void {
+    if (!this.measures.has(id)) return
+    if (this.measurePolylineLayer) {
+      this.measurePolylineLayer.remove([id])
+    }
+    if (this.measureMarkerLayer) {
+      const points = this.measures.get(id)!
+      const ids = points.map((_, i) => `${id}-v-${i}`)
+      this.measureMarkerLayer.remove(ids)
+    }
+    this._destroyMeasureLabels(id)
+    this.measures.delete(id)
+    this.measureVisible.delete(id)
+    if (this.highlightedMeasureId === id) this.highlightedMeasureId = null
+  }
+
+  /** 切换测距可见性。 */
+  setMeasureVisible(id: string, visible: boolean): void {
+    if (!this.measurePolylineLayer || !this.measures.has(id)) return
+    this.measureVisible.set(id, visible)
+    const points = this.measures.get(id)!
+    const path = points.map((p) => new this.TMap.LatLng(p.lat, p.lng))
+    const lineStyle = !visible ? 'hidden'
+      : (this.highlightedMeasureId === id ? 'highlight' : 'default')
+    this.measurePolylineLayer.updateGeometries([{ id, styleId: lineStyle, paths: [path] }])
+
+    const markerStyle = visible ? 'default' : 'hidden'
+    if (this.measureMarkerLayer) {
+      const markerGeos = points.map((p, i) => ({
+        id: `${id}-v-${i}`,
+        styleId: markerStyle,
+        position: new this.TMap.LatLng(p.lat, p.lng),
+      }))
+      this.measureMarkerLayer.updateGeometries(markerGeos)
+    }
+
+    // 标签：显隐通过 setMap
+    const labels = this.measureLabelMarkers.get(id)
+    if (labels) {
+      for (const l of labels) {
+        if (visible) l.setMap(this.map)
+        else l.setMap(null)
+      }
+    }
+  }
+
+  /** 切换测距高亮。 */
+  setMeasureHighlight(id: string | null): void {
+    const prev = this.highlightedMeasureId
+    this.highlightedMeasureId = id
+
+    const lineUpdates: any[] = []
+    if (prev !== null && prev !== id && this.measures.has(prev) && this.measureVisible.get(prev) !== false) {
+      const pts = this.measures.get(prev)!
+      lineUpdates.push({ id: prev, styleId: 'default', paths: [pts.map((p: LatLng) => new this.TMap.LatLng(p.lat, p.lng))] })
+    }
+    if (id !== null && this.measures.has(id) && this.measureVisible.get(id) !== false) {
+      const pts = this.measures.get(id)!
+      lineUpdates.push({ id, styleId: 'highlight', paths: [pts.map((p: LatLng) => new this.TMap.LatLng(p.lat, p.lng))] })
+    }
+    if (lineUpdates.length > 0 && this.measurePolylineLayer) {
+      this.measurePolylineLayer.updateGeometries(lineUpdates)
+    }
+  }
+
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   /** 销毁测量图层（标记、折线、标签）并清空对应 track Map。clearAll 和 clearMeasurement 的共同实现。 */
@@ -578,6 +839,22 @@ export class OverlayManager {
       this.pointLabelLayer.setMap(null)
       this.pointLabelLayer = null
     }
+    // 测距图层清理
+    if (this.measurePolylineLayer) {
+      this.measurePolylineLayer.setMap(null)
+      this.measurePolylineLayer = null
+    }
+    if (this.measureMarkerLayer) {
+      this.measureMarkerLayer.setMap(null)
+      this.measureMarkerLayer = null
+    }
+    for (const labels of this.measureLabelMarkers.values()) {
+      for (const l of labels) l.setMap(null)
+    }
+    this.measureLabelMarkers.clear()
+    this.measures.clear()
+    this.measureVisible.clear()
+    this.highlightedMeasureId = null
   }
 
   /**
@@ -608,17 +885,23 @@ export class OverlayManager {
         name: this.pointMarkerNames.get(id) ?? '',
         visible: this.pointMarkerVisible.get(id) ?? true,
       })),
+      measures: Array.from(this.measures.entries()).map(([id, points]) => ({
+        id,
+        points: points.map((p: LatLng) => ({ lat: p.lat, lng: p.lng })),
+        visible: this.measureVisible.get(id) ?? true,
+      })),
+      circles: [],
     }
   }
 
   /**
    * 从快照恢复所有持久覆盖物数据到当前地图。
-   * 直接操作底层图层，不依赖工具回调——适合在工具未激活时批量重建。
    */
   restore(
     data: OverlaySnapshotItem,
     polygonClickCb: (id: string) => void,
     polygonMousedownCb?: (id: string, latLng: any) => void,
+    measureClickCb?: (id: string) => void,
   ): void {
     // 恢复多边形——将几何体通过 initialGeometries 传入构造器，
     // 避免地图未就绪时 add() 不渲染的问题。
@@ -648,6 +931,29 @@ export class OverlayManager {
       this.ensurePointMarkerLayer(markerGeos)
       this.ensurePointLabelLayer(labelGeos)
     }
+    // 恢复测距
+    if (data.measures && data.measures.length > 0) {
+      for (const m of data.measures) {
+        if (m.points.length < 2) continue
+        // 计算段距离
+        const segDists: number[] = []
+        for (let i = 0; i < m.points.length - 1; i++) {
+          const a = m.points[i]
+          const b = m.points[i + 1]
+          const R = 6371000
+          const dLat = (b.lat - a.lat) * Math.PI / 180
+          const dLng = (b.lng - a.lng) * Math.PI / 180
+          const lat1 = a.lat * Math.PI / 180
+          const lat2 = b.lat * Math.PI / 180
+          const sinDLat = Math.sin(dLat / 2)
+          const sinDLng = Math.sin(dLng / 2)
+          const a2 = sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLng * sinDLng
+          segDists.push(R * 2 * Math.atan2(Math.sqrt(a2), Math.sqrt(1 - a2)))
+        }
+        this.addMeasure(m.id, m.points, segDists, measureClickCb ?? (() => {}))
+        if (!m.visible) this.setMeasureVisible(m.id, false)
+      }
+    }
   }
 
   /** 从地图移除所有图层（不清除数据），用于地图实例销毁前的清理。 */
@@ -656,6 +962,7 @@ export class OverlayManager {
       this.markerLayer, this.polylineLayer,
       this.polygonLayer, this.rubberBandLayer,
       this.pointMarkerLayer, this.pointLabelLayer,
+      this.measurePolylineLayer, this.measureMarkerLayer,
     ]
     for (const layer of layers) {
       if (layer) layer.setMap(null)
@@ -663,6 +970,39 @@ export class OverlayManager {
     for (const marker of this.labelMarkers.values()) {
       marker.setMap(null)
     }
+    for (const labels of this.measureLabelMarkers.values()) {
+      for (const l of labels) l.setMap(null)
+    }
+  }
+
+  /** 获取多边形图层引用（供 CircleTool 等注册直连事件）。 */
+  getPolygonLayer(): any { return this.polygonLayer }
+
+  /** 设置圆形专有点击回调（由 CircleTool 注册）。 */
+  setCircleClickHandler(cb: (id: string) => void): void { this.onCircleClick = cb }
+
+  /** 设置圆形专有 mousedown 回调（由 CircleTool 注册，用于拖拽移动）。 */
+  setCircleMousedownHandler(cb: (id: string, latLng: any) => void): void {
+    this.onCircleMousedown = cb
+    this._attachMousedownHandler()
+  }
+
+  /**
+   * 将指定多边形切换为虚线预览样式（编辑中预览），更新路径同时沿用 preview styleId。
+   * 不影响 highlightedId，commit/cancel 时 addPolygon 会将其重置为 default。
+   */
+  setPolygonPreview(id: string): void {
+    if (!this.polygonLayer || !this.polygons.has(id)) return
+    const paths = this.polygons.get(id)!
+    if (this.polygonVisible.get(id) !== false) {
+      this.polygonLayer.updateGeometries([{ id, styleId: 'preview', paths }])
+    }
+  }
+
+  /** 设置多边形专有 mousedown 回调（由 PolygonTool 注册，用于拖拽移动）。 */
+  setPolygonMousedownHandler(cb: (id: string, latLng: any) => void): void {
+    this.onPolygonMousedown = cb
+    this._attachMousedownHandler()
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────

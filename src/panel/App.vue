@@ -35,7 +35,7 @@
     </div>
 
     <!-- 设置下拉面板 -->
-    <Settings v-if="showSettings" @debug-change="setDebug" />
+    <Settings v-if="showSettings" @debug-change="setDebug" @theme-change="onThemeChange" />
 
     <!-- 工具选择栏 -->
     <ToolBar
@@ -47,34 +47,43 @@
     <!-- 工具结果/操作区 -->
     <ResultPanel
       :active-tool="activeTool"
-      :segments="segments"
-      :total-label="totalLabel"
       :point-count="pointCount"
+      :measure-mode="measureMode"
       :polygon-mode="polygonMode"
       :drawing-point-count="drawingPointCount"
-      :polygon-layers="polygonLayers"
       :editing-polygon-id="editingPolygonId"
-      :point-markers="pointMarkers"
+      :circle-mode="circleMode"
+      :circle-preview="circlePreview"
+      :circle-preview-geometry="circlePreviewGeometry"
+      @start-drawing-circle="startDrawingCircle"
+      @cancel-drawing-circle="cancelDrawingCircle"
       @start-drawing="startDrawingPolygon"
       @finish-drawing="finishDrawingPolygon"
       @cancel-drawing="cancelDrawingPolygon"
       @undo-point="undoPolygonPoint"
-      @delete-layer="(id) => deletePolygon(id)"
-      @rename-layer="(id, name) => renamePolygon(id, name)"
-      @toggle-visible="(id) => togglePolygonVisible(id)"
-      @select-layer="(id) => selectPolygonFromPanel(id)"
       @draw-from-text="(input) => drawPolygon(input)"
-      @start-edit="(id) => startEditPolygon(id)"
       @finish-edit="finishEditPolygon"
       @cancel-edit="cancelEditPolygon"
-      @delete-point="(id) => deletePointMarker(id)"
-      @rename-point="(id, name) => renamePointMarker(id, name)"
-      @toggle-point-visible="(id) => togglePointMarkerVisible(id)"
-      @select-point="(id, multi) => selectPointMarkerFromPanel(id, multi)"
+      @update-circle="(id, r, n) => updateCircle(id, r, n)"
+      @finish-circle="finishCircle"
+      @commit-edit-circle="commitEditCircle"
+      @cancel-edit-circle="cancelEditCircle"
       @import-points="(input) => importPointMarkers(input)"
     />
 
-    <!-- 操作按钮栏（多边形工具激活时隐藏） -->
+    <!-- 统一图层列表 + 详情 -->
+    <LayerList
+      :layers="layers"
+      :selected-layer="selectedLayer"
+      @select-layer="(id) => selectLayer(id)"
+      @toggle-visible="(id) => toggleLayerVisible(id)"
+      @delete-layer="(id) => deleteLayer(id)"
+      @rename-layer="(id, name) => renameLayer(id, name)"
+      @reorder="reorderLayers"
+      @edit-layer="(id) => editLayer(id)"
+    />
+
+    <!-- 操作按钮栏 -->
     <ActionBar
       :active-tool="activeTool"
       :point-count="pointCount"
@@ -94,54 +103,35 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useTool } from './composables/useTool'
+import { THEME_KEY, HOST_ID } from '@shared/constants'
 import ToolBar from './components/ToolBar.vue'
 import ResultPanel from './components/ResultPanel.vue'
 import ActionBar from './components/ActionBar.vue'
 import Settings from './components/Settings.vue'
+import LayerList from './components/LayerList.vue'
 
 const {
-  isMapReady,
-  mapStatus,
-  activeTool,
-  segments,
-  totalLabel,
-  pointCount,
-  polygonMode,
-  drawingPointCount,
-  polygonLayers,
-  editingPolygonId,
-  pointMarkers,
-  setTool,
-  finish,
-  undo,
-  clear,
-  startDrawingPolygon,
-  finishDrawingPolygon,
-  cancelDrawingPolygon,
-  undoPolygonPoint,
-  drawPolygon,
-  deletePolygon,
-  selectPolygonFromPanel,
-  togglePolygonVisible,
-  renamePolygon,
-  startEditPolygon,
-  finishEditPolygon,
-  cancelEditPolygon,
-  deletePointMarker,
-  selectPointMarkerFromPanel,
-  togglePointMarkerVisible,
-  renamePointMarker,
-  importPointMarkers,
-  setDebug,
-  mouseCoords,
+  isMapReady, mapStatus, activeTool,
+  layers, selectedLayer, layerOrder,
+  selectLayer, deleteLayer, toggleLayerVisible, renameLayer, reorderLayers, editLayer,
+  segments, totalLabel, pointCount,
+  polygonMode, drawingPointCount, editingPolygonId,
+  startDrawingPolygon, finishDrawingPolygon, cancelDrawingPolygon,
+  undoPolygonPoint, drawPolygon, finishEditPolygon, cancelEditPolygon,
+  pointMarkers, importPointMarkers,
+  circleMode, circlePreview, circlePreviewGeometry, measureMode,
+  startDrawingCircle, cancelDrawingCircle, updateCircle, finishCircle,
+  commitEditCircle, cancelEditCircle,
+  commitEditMeasure, cancelEditMeasure,
+  mouseCoords, setTool, finish, undo, clear, setDebug,
 } = useTool()
 
-// ── 折叠/展开状态 ─────────────────────────────────────────────────────────────
+// ── 折叠/展开 ────────────────────────────────────────────────────────────────
 const COLLAPSE_KEY = '__tmh_collapsed__'
 const MINI_Y_KEY = '__tmh_mini_y__'
 const isCollapsed = ref(localStorage.getItem(COLLAPSE_KEY) === 'true')
 
-// ── 地图状态指示器 ────────────────────────────────────────────────────────────
+// ── 地图状态指示器 ───────────────────────────────────────────────────────────
 const statusClass = computed(() => ({
   ready: mapStatus.value === 'ready',
   lost: mapStatus.value === 'lost',
@@ -167,7 +157,7 @@ function expand() {
   localStorage.setItem(COLLAPSE_KEY, 'false')
 }
 
-// ── Mini-tab 拖动 ────────────────────────────────────────────────────────────
+// ── Mini-tab 拖动 ───────────────────────────────────────────────────────────
 const savedMiniY = localStorage.getItem(MINI_Y_KEY)
 const miniTabY = ref(savedMiniY !== null ? Number(savedMiniY) : Math.max(0, window.innerHeight / 2 - 40))
 let miniDragging = false
@@ -181,21 +171,15 @@ function startMiniDrag(e: MouseEvent) {
 }
 
 function onMiniTabClick() {
-  if (miniHasMoved) {
-    miniHasMoved = false
-    return
-  }
+  if (miniHasMoved) { miniHasMoved = false; return }
   expand()
 }
 
-// ── 设置面板可见性 ─────────────────────────────────────────────────────────────
+// ── 设置 ────────────────────────────────────────────────────────────────────
 const showSettings = ref(false)
+function toggleSettings() { showSettings.value = !showSettings.value }
 
-function toggleSettings() {
-  showSettings.value = !showSettings.value
-}
-
-// ── 面板垂直拖拽（始终贴靠右侧，仅垂直可移动）────────────────────────────────
+// ── 面板拖拽 ────────────────────────────────────────────────────────────────
 const posY = ref(20)
 let dragging = false
 let dragOffsetY = 0
@@ -227,13 +211,75 @@ function onResize() {
   posY.value = Math.max(0, Math.min(window.innerHeight - 100, posY.value))
 }
 
-onMounted(() => {
+// ── 主题 ────────────────────────────────────────────────────────────────────
+const themePref = ref<'system' | 'light' | 'dark'>('system')
+const systemDark = window.matchMedia('(prefers-color-scheme: dark)')
+
+const effectiveTheme = computed<'light' | 'dark'>(() =>
+  themePref.value === 'system' ? (systemDark.matches ? 'dark' : 'light') : themePref.value,
+)
+
+function applyTheme() {
+  const host = document.getElementById(HOST_ID)
+  if (!host) return
+  const isDark = themePref.value === 'system'
+    ? systemDark.matches
+    : themePref.value === 'dark'
+  host.classList.toggle('theme-light', !isDark)
+  host.classList.toggle('theme-dark', isDark)
+}
+
+async function loadTheme() {
+  try {
+    const result = await chrome.storage.local.get(THEME_KEY)
+    const stored = result[THEME_KEY]
+    if (stored === 'system' || stored === 'light' || stored === 'dark') {
+      themePref.value = stored
+    }
+  } catch {
+    const local = localStorage.getItem(THEME_KEY)
+    if (local === 'system' || local === 'light' || local === 'dark') {
+      themePref.value = local
+    }
+  }
+  applyTheme()
+}
+
+function onSystemThemeChange() {
+  if (themePref.value === 'system') applyTheme()
+}
+
+function onStorageChanged(changes: Record<string, chrome.storage.StorageChange>, area: string) {
+  if (area !== 'local') return
+  const c = changes[THEME_KEY]
+  if (!c) return
+  const v = c.newValue
+  if (v === 'system' || v === 'light' || v === 'dark') {
+    themePref.value = v
+    applyTheme()
+  }
+}
+
+function onThemeChange(theme: 'system' | 'light' | 'dark') {
+  themePref.value = theme
+  chrome.storage.local.set({ [THEME_KEY]: theme }).catch(() => {
+    localStorage.setItem(THEME_KEY, theme)
+  })
+  applyTheme()
+}
+
+onMounted(async () => {
+  await loadTheme()
+  systemDark.addEventListener('change', onSystemThemeChange)
+  chrome.storage.onChanged.addListener(onStorageChanged)
   document.addEventListener('mousemove', onMouseMove)
   document.addEventListener('mouseup', onMouseUp)
   window.addEventListener('resize', onResize)
 })
 
 onUnmounted(() => {
+  systemDark.removeEventListener('change', onSystemThemeChange)
+  chrome.storage.onChanged.removeListener(onStorageChanged)
   document.removeEventListener('mousemove', onMouseMove)
   document.removeEventListener('mouseup', onMouseUp)
   window.removeEventListener('resize', onResize)

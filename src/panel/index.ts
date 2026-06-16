@@ -1,9 +1,9 @@
 import { createApp, type App } from 'vue'
 import VueApp from './App.vue'
 import panelCss from './style/panel.css?inline'
+import { HOST_ID } from '@shared/constants'
 
 const DEFAULT_WHITELIST = ['lbs.qq.com']
-const HOST_ID = 'tmap-hooker-host'
 
 let vueApp: App | null = null
 

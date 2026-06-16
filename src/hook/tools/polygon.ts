@@ -1,4 +1,5 @@
 import { HookEvent, sendToPanel } from '@shared/protocol'
+import type { LayerKind, LayerDrawnPayload, LayerSelectedPayload, LayerDeletedPayload, LayerEditEventPayload, PolygonLayerData } from '@shared/protocol'
 import { TOOL_IDS } from '@shared/tool-config'
 import { parseCoords, coordsToText } from '@shared/utils/parse-coords'
 import { log } from '../logger'
@@ -9,6 +10,10 @@ export class PolygonTool implements ITool {
   readonly id = TOOL_IDS.POLYGON
 
   private ctx: ToolContext | null = null
+  /** 持久化 overlays 引用，不随 deactivate 清空，确保切工具后仍可高亮/拖拽已绘制图形。 */
+  private overlays: any = null
+  /** 持久化 map 引用，同上。 */
+  private mapRef: any = null
   private mode: 'idle' | 'drawing' = 'idle'
   private drawingPoints: LatLng[] = []
   private selectedId: string | null = null
@@ -57,8 +62,32 @@ export class PolygonTool implements ITool {
     return (id, latLng) => this._onPolygonMousedown(id, latLng)
   }
 
+  /**
+   * SPA 切换后从快照恢复 PolygonTool 内部状态。
+   * overlay-manager.restore() 只重建了图层几何体和内部 polygons Map，
+   * PolygonTool.polygonCoords 和 Panel 的 layers 列表需要重新同步。
+   */
+  registerFromRestore(items: Array<{ id: string; points: LatLng[] }>): void {
+    for (const item of items) {
+      this.polygonCoords.set(item.id, item.points)
+      // 回放 LAYER_DRAWN 让 Panel 重建图层列表
+      const { area, perimeter } = this._tryComputeGeometry(item.points)
+      sendToPanel({
+        type: HookEvent.LAYER_DRAWN,
+        payload: {
+          id: item.id,
+          kind: 'polygon' as LayerKind,
+          data: { kind: 'polygon', coords: item.points, area, perimeter } as PolygonLayerData,
+        },
+      })
+    }
+    log('PolygonTool.registerFromRestore:', items.length, 'polygons')
+  }
+
   activate(ctx: ToolContext): void {
     this.ctx = ctx
+    this.overlays = ctx.overlays
+    this.mapRef = ctx.map
     this.mode = 'idle'
     this._registerIdleClick()
     log('PolygonTool activated (idle mode)')
@@ -143,7 +172,7 @@ export class PolygonTool implements ITool {
     )
     this.polygonIds.add(id)
     this.polygonCoords.set(id, coords)
-    sendToPanel({ type: HookEvent.POLYGON_DRAWN, payload: { id, count } })
+    sendToPanel({ type: HookEvent.LAYER_DRAWN, payload: { id, kind: 'polygon' as LayerKind, data: { kind: 'polygon', coords, area: null, perimeter: null } as PolygonLayerData } })
     this._sendGeometryInfo(id, coords)
     log('polygon finished, id =', id, 'points =', count)
     this.enterIdleMode()
@@ -216,7 +245,7 @@ export class PolygonTool implements ITool {
     )
     this.polygonIds.add(id)
     this.polygonCoords.set(id, points)
-    sendToPanel({ type: HookEvent.POLYGON_DRAWN, payload: { id, count: points.length } })
+    sendToPanel({ type: HookEvent.LAYER_DRAWN, payload: { id, kind: 'polygon' as LayerKind, data: { kind: 'polygon', coords: points, area: null, perimeter: null } as PolygonLayerData } })
     this._sendGeometryInfo(id, points)
     log('polygon drawn from input, id =', id, 'points =', points.length)
   }
@@ -257,7 +286,7 @@ export class PolygonTool implements ITool {
     if (this.selectedId === id) {
       this.selectedId = null
     }
-    sendToPanel({ type: HookEvent.POLYGON_DELETED, payload: { id } })
+    sendToPanel({ type: HookEvent.LAYER_DELETED, payload: { id } })
     log('polygon deleted by id:', id)
   }
 
@@ -271,12 +300,12 @@ export class PolygonTool implements ITool {
     if (this.mode === 'drawing') return
     if (this.selectedId === id) return
     this.selectedId = id
-    this.ctx?.overlays.setPolygonHighlight(id)
+    this.overlays?.setPolygonHighlight(id)
     const coords = this.polygonCoords.get(id) ?? []
     if (panToLocation && coords.length > 0 && this.ctx) {
       this._panToCenter(coords)
     }
-    sendToPanel({ type: HookEvent.POLYGON_SELECTED, payload: { id, coords } })
+    sendToPanel({ type: HookEvent.LAYER_SELECTED, payload: { id, data: { kind: 'polygon', coords, area: null, perimeter: null } as PolygonLayerData } })
     this._sendGeometryInfo(id, coords)
     log('polygon selected by panel:', id)
   }
@@ -340,9 +369,9 @@ export class PolygonTool implements ITool {
     if (this._justFinishedDrag) return
     if (this.selectedId === id) return
     this.selectedId = id
-    this.ctx?.overlays.setPolygonHighlight(id)
+    this.overlays?.setPolygonHighlight(id)
     const coords = this.polygonCoords.get(id) ?? []
-    sendToPanel({ type: HookEvent.POLYGON_SELECTED, payload: { id, coords } })
+    sendToPanel({ type: HookEvent.LAYER_SELECTED, payload: { id, data: { kind: 'polygon', coords, area: null, perimeter: null } as PolygonLayerData } })
     this._sendGeometryInfo(id, coords)
     log('polygon selected:', id)
   }
@@ -352,6 +381,7 @@ export class PolygonTool implements ITool {
   private _registerIdleClick(): void {
     if (this.idleMapClickHandler || !this.ctx) return
     this.idleMapClickHandler = (_evt: any) => {
+      if (this._justFinishedDrag) return
       if (this._polygonClickFired) {
         this._polygonClickFired = false
         return
@@ -359,7 +389,7 @@ export class PolygonTool implements ITool {
       if (this.selectedId !== null) {
         this.selectedId = null
         this.ctx?.overlays.setPolygonHighlight(null)
-        sendToPanel({ type: HookEvent.POLYGON_SELECTED, payload: { id: '', coords: [] } })
+        sendToPanel({ type: HookEvent.LAYER_SELECTED, payload: { id: '' } })
         log('polygon deselected (map click)')
       }
     }
@@ -379,8 +409,15 @@ export class PolygonTool implements ITool {
     if (this.editingId !== null) return
     if (this.mode !== 'idle') return
     if (id === PolygonTool.PREVIEW_POLY_ID) return
-    if (!this.ctx) return
-    if (id !== this.selectedId) return
+    if (!this.overlays || !this.mapRef) { log('[drag] SKIP — missing overlays/mapRef'); return }
+    // 如果多边形未选中，先自动选中（对齐 CircleTool 的"直接拖"体验）
+    if (id !== this.selectedId) {
+      this.selectedId = id
+      this.overlays.setPolygonHighlight(id)
+      const coords = this.polygonCoords.get(id) ?? []
+      sendToPanel({ type: HookEvent.LAYER_SELECTED, payload: { id, data: { kind: 'polygon', coords, area: null, perimeter: null } as PolygonLayerData } })
+      this._sendGeometryInfo(id, coords)
+    }
     const originalCoords = this.polygonCoords.get(id)
     if (!originalCoords) return
 
@@ -391,44 +428,68 @@ export class PolygonTool implements ITool {
     this.dragCurrentCoords = null
 
     try {
-      this.ctx.map.setDraggable(false)
+      this.mapRef.setDraggable(false)
     } catch (e) {
       log('[drag] map.setDraggable(false) threw:', e)
     }
 
-    this.dragMoveHandler = (evt: any) => this._onDragMove(evt)
-    this.dragUpHandler = () => this._onDragUp()
-    this.ctx.map.on('mousemove', this.dragMoveHandler)
+    const dragMoveLogger: Array<{ t: number; x: number; y: number }> = []
+    this.dragMoveHandler = (evt: MouseEvent) => {
+      // 使用 document mousemove（而非 map.on），避免 TMap overlay 层拦截 mousemove 事件
+      if (!this.mapRef || !this.overlays || !this.isDragging) return
+      dragMoveLogger.push({ t: Date.now(), x: evt.clientX, y: evt.clientY })
+      const container = this.mapRef.getContainer()
+      const rect = container.getBoundingClientRect()
+      const TMap = (window as any).TMap
+      let latLng: { lat: number; lng: number }
+      try {
+        const point = new TMap.Point(evt.clientX - rect.left, evt.clientY - rect.top)
+        const projected = this.mapRef.unprojectFromContainer(point)
+        latLng = { lat: projected.lat, lng: projected.lng }
+      } catch (e: any) {
+        log('[drag] unproject FAILED:', e?.message ?? e)
+        return
+      }
+      this._onDragMove({ latLng, _seq: dragMoveLogger.length })
+    }
+    this.dragUpHandler = () => {
+      log('[drag] mouseup — moved:', dragMoveLogger.length, 'times')
+      this._onDragUp()
+    }
+    document.addEventListener('mousemove', this.dragMoveHandler)
     document.addEventListener('mouseup', this.dragUpHandler)
     log('[drag] started')
   }
 
   private _onDragMove(evt: any): void {
-    if (!this.isDragging || !this.dragStartLatLng || !this.dragOriginalCoords || !this.draggingId || !this.ctx) return
+    if (!this.isDragging || !this.dragStartLatLng || !this.dragOriginalCoords || !this.draggingId || !this.overlays) return
     const dLat = evt.latLng.lat - this.dragStartLatLng.lat
     const dLng = evt.latLng.lng - this.dragStartLatLng.lng
     const newCoords = this.dragOriginalCoords.map((p) => ({ lat: p.lat + dLat, lng: p.lng + dLng }))
     this.dragCurrentCoords = newCoords
-    this.ctx.overlays.updatePolygonPath(this.draggingId, newCoords)
+    this.overlays.updatePolygonPath(this.draggingId, newCoords)
   }
 
   private _onDragUp(): void {
-    if (!this.isDragging || !this.dragOriginalCoords || !this.draggingId || !this.ctx) return
+    if (!this.isDragging || !this.dragOriginalCoords || !this.draggingId || !this.overlays || !this.mapRef) return
     const finalCoords = this.dragCurrentCoords ?? [...this.dragOriginalCoords]
     const id = this.draggingId
 
     this.polygonCoords.set(id, finalCoords)
-    this.ctx.overlays.addPolygon(id, finalCoords,
+    this.overlays.addPolygon(id, finalCoords,
       (clickedId) => this._onPolygonClick(clickedId),
       (clickedId, latLng) => this._onPolygonMousedown(clickedId, latLng),
     )
-    this.ctx.overlays.setPolygonHighlight(id)
-    sendToPanel({ type: HookEvent.POLYGON_SELECTED, payload: { id, coords: finalCoords } })
-    this._sendGeometryInfo(id, finalCoords)
+    this.overlays.setPolygonHighlight(id)
+    // 内联计算 area/perimeter，避免 LAYER_SELECTED(null) + POLYGON_GEOMETRY 两步的时序依赖
+    const { area, perimeter } = this._tryComputeGeometry(finalCoords)
+    sendToPanel({ type: HookEvent.LAYER_SELECTED, payload: { id, data: { kind: 'polygon', coords: finalCoords, area, perimeter } as PolygonLayerData } })
+    // area/perimeter 已内联，只在计算失败（null）时才补发
+    if (area === null) this._sendGeometryInfo(id, finalCoords)
 
     this._cleanupDrag()
 
-    try { this.ctx.map.setDraggable(true) } catch { /* 忽略 */ }
+    try { this.mapRef.setDraggable(true) } catch { /* 忽略 */ }
 
     this._justFinishedDrag = true
     setTimeout(() => { this._justFinishedDrag = false }, 100)
@@ -436,8 +497,8 @@ export class PolygonTool implements ITool {
   }
 
   private _cleanupDrag(): void {
-    if (this.ctx && this.dragMoveHandler) {
-      this.ctx.map.off('mousemove', this.dragMoveHandler)
+    if (this.dragMoveHandler) {
+      document.removeEventListener('mousemove', this.dragMoveHandler)
       this.dragMoveHandler = null
     }
     if (this.dragUpHandler) {
@@ -492,12 +553,12 @@ export class PolygonTool implements ITool {
       map: this.ctx.map,
       styles: {
         default: new TMap.PolygonStyle({
-          color: 'rgba(74, 144, 217, 0.12)',
+          color: 'rgba(74, 144, 217, 0.28)',
           borderColor: '#4A90D9',
           borderWidth: 2,
         }),
         highlight: new TMap.PolygonStyle({
-          color: 'rgba(74, 144, 217, 0.3)',
+          color: 'rgba(74, 144, 217, 0.45)',
           borderColor: '#2B6CB0',
           borderWidth: 3,
         }),
@@ -532,7 +593,7 @@ export class PolygonTool implements ITool {
     }
 
     this._unregisterIdleClick()
-    sendToPanel({ type: HookEvent.POLYGON_EDIT_STARTED, payload: { id } })
+    sendToPanel({ type: HookEvent.LAYER_EDIT_STARTED, payload: { id, kind: 'polygon' } })
     log('startEditById:', id)
   }
 
@@ -553,7 +614,9 @@ export class PolygonTool implements ITool {
     this.ctx.overlays.setPolygonVisible(id, true)
     this.editingId = null
     this._registerIdleClick()
-    sendToPanel({ type: HookEvent.POLYGON_EDIT_FINISHED, payload: { id, coords: finalCoords } })
+    sendToPanel({ type: HookEvent.LAYER_EDIT_COMMITTED, payload: { id, kind: 'polygon' } })
+    // Also send updated layer data
+    sendToPanel({ type: HookEvent.LAYER_DRAWN, payload: { id, kind: 'polygon' as LayerKind, data: { kind: 'polygon', coords: finalCoords, area: null, perimeter: null } as PolygonLayerData } })
     this._sendGeometryInfo(id, finalCoords)
     log('finishEdit:', id)
   }
@@ -563,7 +626,7 @@ export class PolygonTool implements ITool {
     if (this.editingId === null) return
     const id = this.editingId
     this._cancelEditInternal()
-    sendToPanel({ type: HookEvent.POLYGON_EDIT_CANCELLED, payload: { id } })
+    sendToPanel({ type: HookEvent.LAYER_EDIT_CANCELLED, payload: { id, kind: 'polygon' } })
     log('cancelEdit:', id)
   }
 
@@ -685,6 +748,27 @@ export class PolygonTool implements ITool {
       log('_sendGeometryInfo:', id, 'area:', area, 'perimeter:', perimeter)
     } catch (e) {
       log('_sendGeometryInfo failed:', e)
+    }
+  }
+
+  /**
+   * 同步计算多边形面积和周长，失败时返回 null。
+   * 供 _onDragUp / finishEdit 等需要在同一消息里携带几何数据的场景使用，
+   * 避免先发 null 再补发 POLYGON_GEOMETRY 产生的时序依赖。
+   */
+  private _tryComputeGeometry(coords: LatLng[]): { area: number | null; perimeter: number | null } {
+    if (coords.length < 3) return { area: null, perimeter: null }
+    const TMap = (window as any).TMap
+    if (!TMap?.geometry) return { area: null, perimeter: null }
+    try {
+      const path = coords.map((p) => new TMap.LatLng(p.lat, p.lng))
+      const closedPath = [...path, path[0]]
+      const perimeter = TMap.geometry.computeDistance(closedPath) as number
+      const area = TMap.geometry.computeArea(closedPath) as number
+      return { area, perimeter }
+    } catch (e) {
+      log('_tryComputeGeometry failed:', e)
+      return { area: null, perimeter: null }
     }
   }
 }

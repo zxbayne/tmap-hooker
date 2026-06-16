@@ -15,30 +15,33 @@ export const PANEL_SOURCE = 'tmap-panel'
 // Hook → Panel 事件：hook 层检测到地图事件时发送给 panel
 export const enum HookEvent {
   MAP_READY = 'MAP_READY',
+  MAP_LOST = 'MAP_LOST',
+  MAP_RESTORED = 'MAP_RESTORED',
+  MOUSE_MOVE = 'MOUSE_MOVE',
+  // 多点测距（实时绘制过程中的状态推送）
   POINT_ADDED = 'POINT_ADDED',
   SEGMENT_ADDED = 'SEGMENT_ADDED',
   MEASUREMENT_RESULT = 'MEASUREMENT_RESULT',
   POINT_REMOVED = 'POINT_REMOVED',
-  // 多边形工具事件
+  // 多边形绘制过程中的状态推送
   POLYGON_POINT_ADDED = 'POLYGON_POINT_ADDED',
   POLYGON_POINT_REMOVED = 'POLYGON_POINT_REMOVED',
-  POLYGON_DRAWN = 'POLYGON_DRAWN',
-  POLYGON_SELECTED = 'POLYGON_SELECTED',
-  POLYGON_DELETED = 'POLYGON_DELETED',
   POLYGON_MODE_CHANGED = 'POLYGON_MODE_CHANGED',
-  POLYGON_EDIT_STARTED = 'POLYGON_EDIT_STARTED',
-  POLYGON_EDIT_FINISHED = 'POLYGON_EDIT_FINISHED',
-  POLYGON_EDIT_CANCELLED = 'POLYGON_EDIT_CANCELLED',
-  // 打点标记工具事件
-  POINT_MARKER_ADDED = 'POINT_MARKER_ADDED',
-  POINT_MARKER_DELETED = 'POINT_MARKER_DELETED',
-  // 地图生命周期事件
-  MAP_LOST = 'MAP_LOST',
-  MAP_RESTORED = 'MAP_RESTORED',
-  // 多边形几何信息（面积/周长）
   POLYGON_GEOMETRY = 'POLYGON_GEOMETRY',
-  // 鼠标坐标实时推送
-  MOUSE_MOVE = 'MOUSE_MOVE',
+  // 圆形绘制过程中的状态推送
+  CIRCLE_CENTER_SET = 'CIRCLE_CENTER_SET',
+  CIRCLE_UPDATED = 'CIRCLE_UPDATED',
+  // ── 通用图层事件 ──
+  /** 图层创建或编辑完成 */
+  LAYER_DRAWN = 'LAYER_DRAWN',
+  /** 图层被选中（含完整几何数据） */
+  LAYER_SELECTED = 'LAYER_SELECTED',
+  /** 图层被删除 */
+  LAYER_DELETED = 'LAYER_DELETED',
+  /** 编辑启动/完成/取消 */
+  LAYER_EDIT_STARTED = 'LAYER_EDIT_STARTED',
+  LAYER_EDIT_COMMITTED = 'LAYER_EDIT_COMMITTED',
+  LAYER_EDIT_CANCELLED = 'LAYER_EDIT_CANCELLED',
 }
 
 // Panel → Hook 命令：panel 层用户操作时发送给 hook
@@ -49,36 +52,96 @@ export const enum PanelCmd {
   UNDO = 'UNDO',
   CLEAR = 'CLEAR',
   SET_DEBUG = 'SET_DEBUG',
-  // 多边形工具命令
-  DRAW_POLYGON = 'DRAW_POLYGON',
-  DELETE_POLYGON = 'DELETE_POLYGON',
+  // ── 通用图层命令 ──
+  /** 选中图层（kind 让 hook 路由到正确的工具/overlay） */
+  LAYER_SELECT = 'LAYER_SELECT',
+  /** 删除图层 */
+  LAYER_DELETE = 'LAYER_DELETE',
+  /** 切换可见性 */
+  LAYER_TOGGLE = 'LAYER_TOGGLE',
+  /** 重命名 */
+  LAYER_RENAME = 'LAYER_RENAME',
+  /** 进入编辑模式 */
+  LAYER_EDIT = 'LAYER_EDIT',
+  // ── 工具专有命令 ──
+  /** 多边形绘制控制 */
   START_DRAWING_POLYGON = 'START_DRAWING_POLYGON',
   FINISH_DRAWING_POLYGON = 'FINISH_DRAWING_POLYGON',
   CANCEL_DRAWING_POLYGON = 'CANCEL_DRAWING_POLYGON',
   UNDO_POLYGON_POINT = 'UNDO_POLYGON_POINT',
-  SELECT_POLYGON = 'SELECT_POLYGON',
-  TOGGLE_POLYGON_VISIBLE = 'TOGGLE_POLYGON_VISIBLE',
-  START_EDIT_POLYGON = 'START_EDIT_POLYGON',
+  DRAW_POLYGON = 'DRAW_POLYGON',
   FINISH_EDIT_POLYGON = 'FINISH_EDIT_POLYGON',
   CANCEL_EDIT_POLYGON = 'CANCEL_EDIT_POLYGON',
-  // 打点标记工具命令
-  DELETE_POINT_MARKER = 'DELETE_POINT_MARKER',
-  SELECT_POINT_MARKER = 'SELECT_POINT_MARKER',
-  TOGGLE_POINT_MARKER_VISIBLE = 'TOGGLE_POINT_MARKER_VISIBLE',
-  RENAME_POINT_MARKER = 'RENAME_POINT_MARKER',
+  /** 圆形工具控制 */
+  START_DRAWING_CIRCLE = 'START_DRAWING_CIRCLE',
+  CANCEL_DRAWING_CIRCLE = 'CANCEL_DRAWING_CIRCLE',
+  UPDATE_CIRCLE = 'UPDATE_CIRCLE',
+  FINISH_CIRCLE = 'FINISH_CIRCLE',
+  COMMIT_EDIT_CIRCLE = 'COMMIT_EDIT_CIRCLE',
+  CANCEL_EDIT_CIRCLE = 'CANCEL_EDIT_CIRCLE',
+  /** 测距编辑 */
+  COMMIT_EDIT_MEASURE = 'COMMIT_EDIT_MEASURE',
+  CANCEL_EDIT_MEASURE = 'CANCEL_EDIT_MEASURE',
+  UPDATE_MEASURE_VERTEX = 'UPDATE_MEASURE_VERTEX',
+  /** 打点标记导入 */
   IMPORT_POINT_MARKERS = 'IMPORT_POINT_MARKERS',
+}
+
+// ── 图层种类 ────────────────────────────────────────────────────────────────
+
+export type LayerKind = 'polygon' | 'circle' | 'measure' | 'point-marker'
+
+// ── 通用图层数据模型 ────────────────────────────────────────────────────────
+
+export interface PolygonLayerData {
+  kind: 'polygon'
+  coords: LatLng[]
+  area: number | null
+  perimeter: number | null
+}
+
+export interface CircleLayerData {
+  kind: 'circle'
+  center: LatLng
+  radius: number
+  nPoints: number
+  area: number
+  perimeter: number
+}
+
+export interface MeasureLayerData {
+  kind: 'measure'
+  paths: LatLng[][]
+  segmentDistances: number[]
+  totalDistance: number
+}
+
+export interface PointMarkerLayerData {
+  kind: 'point-marker'
+  lat: number
+  lng: number
+}
+
+export type LayerData = PolygonLayerData | CircleLayerData | MeasureLayerData | PointMarkerLayerData
+
+/** Panel 端统一图层 (单一数据源)。 */
+export interface GenericLayer {
+  id: string
+  kind: LayerKind
+  name: string
+  visible: boolean
+  selected: boolean
+  data?: LayerData
 }
 
 // ── Hook → Panel payload 类型 ────────────────────────────────────────────────
 
-/** 用户在地图上点击了新点时发送。 */
 export interface PointAddedPayload {
   index: number
   lat: number
   lng: number
 }
 
-/** 多点测距新增一段时发送，包含该段距离和累计总距离。 */
 export interface SegmentAddedPayload {
   fromIdx: number
   toIdx: number
@@ -86,19 +149,16 @@ export interface SegmentAddedPayload {
   totalM: number
 }
 
-/** 两点测距完成后发送，包含最终距离和两点坐标。 */
 export interface MeasurementResultPayload {
   distanceM: number
   pointA: LatLng
   pointB: LatLng
 }
 
-/** 多点测距撤销最后一点后发送。 */
 export interface PointRemovedPayload {
   newCount: number
 }
 
-/** 多边形绘制模式下新增顶点时发送。 */
 export interface PolygonPointAddedPayload {
   lat: number
   lng: number
@@ -106,185 +166,180 @@ export interface PolygonPointAddedPayload {
   coordsText: string
 }
 
-/** 多边形绘制模式下撤销最后一个顶点时发送。 */
 export interface PolygonPointRemovedPayload {
   newCount: number
   coordsText: string
 }
 
-/** 多边形绘制完成后发送，id 为新多边形的唯一标识，count 为顶点数。 */
-export interface PolygonDrawnPayload {
-  id: string
-  count: number
-}
-
-/** 用户点击地图上某个多边形时发送，附带顶点坐标供面板坐标导出功能使用。 */
-export interface PolygonSelectedPayload {
-  id: string | null
-  coords: LatLng[]
-}
-
-/** 多边形被删除后发送。 */
-export interface PolygonDeletedPayload {
-  id: string
-}
-
-/** 多边形工具绘制模式变更时发送（idle = 选择模式，drawing = 绘制模式）。 */
 export interface PolygonModeChangedPayload {
   mode: 'idle' | 'drawing'
   drawingPointCount: number
 }
 
-/** 多边形顶点编辑模式已启动。 */
-export interface PolygonEditStartedPayload {
+export interface PolygonGeometryPayload {
   id: string
+  area: number
+  perimeter: number
 }
 
-/** 多边形顶点编辑完成，附带最终坐标。 */
-export interface PolygonEditFinishedPayload {
-  id: string
-  coords: LatLng[]
-}
-
-/** 多边形顶点编辑已取消。 */
-export interface PolygonEditCancelledPayload {
-  id: string
-}
-
-/** 打点标记工具：新增一个点位时发送。 */
-export interface PointMarkerAddedPayload {
+export interface CircleCenterSetPayload {
   id: string
   lat: number
   lng: number
-  name: string
+  radius: number
+  nPoints: number
 }
 
-/** 打点标记工具：点位被删除时发送。 */
-export interface PointMarkerDeletedPayload {
+export interface CircleUpdatedPayload {
+  id: string
+  radius: number
+  nPoints: number
+  area: number
+  perimeter: number
+  /** placed-mode 圆心拖拽 / 放置完成后携带，让 panel 端 circlePreview 坐标保持同步。 */
+  lat?: number
+  lng?: number
+}
+
+export interface CircleDrawnPayload {
+  id: string
+  center: LatLng
+  radius: number
+  nPoints: number
+  area: number
+  perimeter: number
+}
+
+// ── 通用图层 payload ──
+
+export interface LayerDrawnPayload {
+  id: string
+  kind: LayerKind
+  data: LayerData
+}
+
+export interface LayerSelectedPayload {
+  id: string | null
+  data?: LayerData
+}
+
+export interface LayerDeletedPayload {
   id: string
 }
 
-/** overlay 快照：保存所有地图覆盖物数据，用于 SPA 页面切换后的恢复。 */
+export interface LayerEditEventPayload {
+  id: string
+  kind: LayerKind
+}
+
+// ── Panel → Hook payload ─────────────────────────────────────────────────────
+
+export interface SetToolPayload {
+  toolId: string
+}
+
+export interface SetDebugPayload {
+  enabled: boolean
+}
+
+export interface DrawPolygonPayload {
+  input: string
+}
+
+export interface UpdateCirclePayload {
+  id: string
+  radius: number
+  nPoints: number
+}
+
+export interface ImportPointMarkersPayload {
+  input: string
+}
+
+// ── 通用图层命令 payload ──
+
+export interface LayerSelectPayload {
+  id: string
+  kind: LayerKind
+}
+
+export interface LayerDeletePayload {
+  id: string
+  kind: LayerKind
+}
+
+export interface LayerTogglePayload {
+  id: string
+  kind: LayerKind
+  visible: boolean
+}
+
+export interface LayerRenamePayload {
+  id: string
+  kind: LayerKind
+  name: string
+}
+
+export interface LayerEditPayload {
+  id: string
+  kind: LayerKind
+  /** 测距编辑时需要携带已有数据 */
+  points?: LatLng[]
+  segmentDistances?: number[]
+  name?: string
+}
+
+// ── 快照 ─────────────────────────────────────────────────────────────────────
+
 export interface OverlaySnapshotItem {
   polygons: Array<{ id: string; points: LatLng[]; visible: boolean }>
   pointMarkers: Array<{ id: string; lat: number; lng: number; name: string; visible: boolean }>
+  measures: Array<{ id: string; points: LatLng[]; visible: boolean }>
+  /** 已提交的圆形，用于 SPA 切换后在 CircleTool 里重建内部状态。 */
+  circles: Array<{
+    id: string
+    center: LatLng
+    radius: number
+    nPoints: number
+    visible: boolean
+  }>
 }
 
-/** 地图恢复后发送，携带恢复的覆盖物数量。 */
 export interface MapRestoredPayload {
   polygonCount: number
   pointMarkerCount: number
 }
 
-/** 多边形几何信息（选中/绘制/编辑/拖拽后触发）。 */
-export interface PolygonGeometryPayload {
-  id: string
-  /** 面积（平方米）。仅当顶点数 ≥ 3 时有效。 */
-  area: number
-  /** 周长（米）。 */
-  perimeter: number
-}
-
-/** 鼠标在地图上移动时的坐标（节流~200ms）。 */
 export interface MouseMovePayload {
   lat: number
   lng: number
 }
 
-// ── Panel → Hook payload 类型 ────────────────────────────────────────────────
+// ── 消息联合类型 ─────────────────────────────────────────────────────────────
 
-/** 切换工具的命令，toolId 为空字符串时表示取消激活。 */
-export interface SetToolPayload {
-  toolId: string
-}
-
-/** 设置 hook 层调试日志开关。 */
-export interface SetDebugPayload {
-  enabled: boolean
-}
-
-/** 从坐标文本绘制多边形的命令。 */
-export interface DrawPolygonPayload {
-  input: string
-}
-
-/** 删除指定 id 的多边形。 */
-export interface DeletePolygonPayload {
-  id: string
-}
-
-/** Panel 主动选中指定多边形（触发 hook 层高亮）。 */
-export interface SelectPolygonPayload {
-  id: string
-}
-
-/** 切换指定多边形的可见性。 */
-export interface TogglePolygonVisiblePayload {
-  id: string
-  visible: boolean
-}
-
-/** 启动指定多边形的顶点编辑模式。 */
-export interface StartEditPolygonPayload {
-  id: string
-}
-
-/** 删除指定点位。 */
-export interface DeletePointMarkerPayload {
-  id: string
-}
-
-/** Panel 主动选中指定点位。 */
-export interface SelectPointMarkerPayload {
-  id: string
-}
-
-/** 切换指定点位的可见性。 */
-export interface TogglePointMarkerVisiblePayload {
-  id: string
-  visible: boolean
-}
-
-/** 重命名点位（同步地图标签）。 */
-export interface RenamePointMarkerPayload {
-  id: string
-  name: string
-}
-
-/** 从坐标文本批量导入点位。 */
-export interface ImportPointMarkersPayload {
-  input: string
-}
-
-// ── 消息联合类型（用于 TypeScript 类型收窄） ────────────────────────────────
-
-/**
- * 分配式 Omit：在联合类型的每个成员上分别执行 Omit，而非把整个联合当成一个类型。
- * 普通 `Omit<Union, K>` 会先求联合的公共键，导致各成员独有的 payload 字段被丢弃。
- */
 type DistributiveOmit<T, K extends keyof any> = T extends any ? Omit<T, K> : never
 
 export type HookMessage =
   | { source: typeof HOOK_SOURCE; type: HookEvent.MAP_READY }
+  | { source: typeof HOOK_SOURCE; type: HookEvent.MAP_LOST }
+  | { source: typeof HOOK_SOURCE; type: HookEvent.MAP_RESTORED; payload: MapRestoredPayload }
+  | { source: typeof HOOK_SOURCE; type: HookEvent.MOUSE_MOVE; payload: MouseMovePayload }
   | { source: typeof HOOK_SOURCE; type: HookEvent.POINT_ADDED; payload: PointAddedPayload }
   | { source: typeof HOOK_SOURCE; type: HookEvent.SEGMENT_ADDED; payload: SegmentAddedPayload }
   | { source: typeof HOOK_SOURCE; type: HookEvent.MEASUREMENT_RESULT; payload: MeasurementResultPayload }
   | { source: typeof HOOK_SOURCE; type: HookEvent.POINT_REMOVED; payload: PointRemovedPayload }
   | { source: typeof HOOK_SOURCE; type: HookEvent.POLYGON_POINT_ADDED; payload: PolygonPointAddedPayload }
   | { source: typeof HOOK_SOURCE; type: HookEvent.POLYGON_POINT_REMOVED; payload: PolygonPointRemovedPayload }
-  | { source: typeof HOOK_SOURCE; type: HookEvent.POLYGON_DRAWN; payload: PolygonDrawnPayload }
-  | { source: typeof HOOK_SOURCE; type: HookEvent.POLYGON_SELECTED; payload: PolygonSelectedPayload }
-  | { source: typeof HOOK_SOURCE; type: HookEvent.POLYGON_DELETED; payload: PolygonDeletedPayload }
   | { source: typeof HOOK_SOURCE; type: HookEvent.POLYGON_MODE_CHANGED; payload: PolygonModeChangedPayload }
-  | { source: typeof HOOK_SOURCE; type: HookEvent.POLYGON_EDIT_STARTED; payload: PolygonEditStartedPayload }
-  | { source: typeof HOOK_SOURCE; type: HookEvent.POLYGON_EDIT_FINISHED; payload: PolygonEditFinishedPayload }
-  | { source: typeof HOOK_SOURCE; type: HookEvent.POLYGON_EDIT_CANCELLED; payload: PolygonEditCancelledPayload }
-  | { source: typeof HOOK_SOURCE; type: HookEvent.POINT_MARKER_ADDED; payload: PointMarkerAddedPayload }
-  | { source: typeof HOOK_SOURCE; type: HookEvent.POINT_MARKER_DELETED; payload: PointMarkerDeletedPayload }
-  | { source: typeof HOOK_SOURCE; type: HookEvent.MAP_LOST }
-  | { source: typeof HOOK_SOURCE; type: HookEvent.MAP_RESTORED; payload: MapRestoredPayload }
   | { source: typeof HOOK_SOURCE; type: HookEvent.POLYGON_GEOMETRY; payload: PolygonGeometryPayload }
-  | { source: typeof HOOK_SOURCE; type: HookEvent.MOUSE_MOVE; payload: MouseMovePayload }
+  | { source: typeof HOOK_SOURCE; type: HookEvent.CIRCLE_CENTER_SET; payload: CircleCenterSetPayload }
+  | { source: typeof HOOK_SOURCE; type: HookEvent.CIRCLE_UPDATED; payload: CircleUpdatedPayload }
+  | { source: typeof HOOK_SOURCE; type: HookEvent.LAYER_DRAWN; payload: LayerDrawnPayload }
+  | { source: typeof HOOK_SOURCE; type: HookEvent.LAYER_SELECTED; payload: LayerSelectedPayload }
+  | { source: typeof HOOK_SOURCE; type: HookEvent.LAYER_DELETED; payload: LayerDeletedPayload }
+  | { source: typeof HOOK_SOURCE; type: HookEvent.LAYER_EDIT_STARTED; payload: LayerEditEventPayload }
+  | { source: typeof HOOK_SOURCE; type: HookEvent.LAYER_EDIT_COMMITTED; payload: LayerEditEventPayload }
+  | { source: typeof HOOK_SOURCE; type: HookEvent.LAYER_EDIT_CANCELLED; payload: LayerEditEventPayload }
 
 export type PanelMessage =
   | { source: typeof PANEL_SOURCE; type: PanelCmd.PANEL_READY }
@@ -293,21 +348,27 @@ export type PanelMessage =
   | { source: typeof PANEL_SOURCE; type: PanelCmd.UNDO }
   | { source: typeof PANEL_SOURCE; type: PanelCmd.CLEAR }
   | { source: typeof PANEL_SOURCE; type: PanelCmd.SET_DEBUG; payload: SetDebugPayload }
-  | { source: typeof PANEL_SOURCE; type: PanelCmd.DRAW_POLYGON; payload: DrawPolygonPayload }
-  | { source: typeof PANEL_SOURCE; type: PanelCmd.DELETE_POLYGON; payload: DeletePolygonPayload }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.LAYER_SELECT; payload: LayerSelectPayload }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.LAYER_DELETE; payload: LayerDeletePayload }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.LAYER_TOGGLE; payload: LayerTogglePayload }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.LAYER_RENAME; payload: LayerRenamePayload }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.LAYER_EDIT; payload: LayerEditPayload }
   | { source: typeof PANEL_SOURCE; type: PanelCmd.START_DRAWING_POLYGON }
   | { source: typeof PANEL_SOURCE; type: PanelCmd.FINISH_DRAWING_POLYGON }
   | { source: typeof PANEL_SOURCE; type: PanelCmd.CANCEL_DRAWING_POLYGON }
   | { source: typeof PANEL_SOURCE; type: PanelCmd.UNDO_POLYGON_POINT }
-  | { source: typeof PANEL_SOURCE; type: PanelCmd.SELECT_POLYGON; payload: SelectPolygonPayload }
-  | { source: typeof PANEL_SOURCE; type: PanelCmd.TOGGLE_POLYGON_VISIBLE; payload: TogglePolygonVisiblePayload }
-  | { source: typeof PANEL_SOURCE; type: PanelCmd.START_EDIT_POLYGON; payload: StartEditPolygonPayload }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.DRAW_POLYGON; payload: DrawPolygonPayload }
   | { source: typeof PANEL_SOURCE; type: PanelCmd.FINISH_EDIT_POLYGON }
   | { source: typeof PANEL_SOURCE; type: PanelCmd.CANCEL_EDIT_POLYGON }
-  | { source: typeof PANEL_SOURCE; type: PanelCmd.DELETE_POINT_MARKER; payload: DeletePointMarkerPayload }
-  | { source: typeof PANEL_SOURCE; type: PanelCmd.SELECT_POINT_MARKER; payload: SelectPointMarkerPayload }
-  | { source: typeof PANEL_SOURCE; type: PanelCmd.TOGGLE_POINT_MARKER_VISIBLE; payload: TogglePointMarkerVisiblePayload }
-  | { source: typeof PANEL_SOURCE; type: PanelCmd.RENAME_POINT_MARKER; payload: RenamePointMarkerPayload }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.START_DRAWING_CIRCLE }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.CANCEL_DRAWING_CIRCLE }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.UPDATE_CIRCLE; payload: UpdateCirclePayload }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.FINISH_CIRCLE }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.COMMIT_EDIT_CIRCLE }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.CANCEL_EDIT_CIRCLE }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.COMMIT_EDIT_MEASURE }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.CANCEL_EDIT_MEASURE }
+  | { source: typeof PANEL_SOURCE; type: PanelCmd.UPDATE_MEASURE_VERTEX }
   | { source: typeof PANEL_SOURCE; type: PanelCmd.IMPORT_POINT_MARKERS; payload: ImportPointMarkersPayload }
 
 /** 从 hook 层向 panel 层发送事件消息（自动附加 source 字段）。 */

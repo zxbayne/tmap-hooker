@@ -1,5 +1,5 @@
 <template>
-  <div class="popup-root">
+  <div class="popup-root" :class="'theme-' + effectiveTheme">
     <div class="popup-header">
       <span class="popup-title">📍 TMap工具</span>
     </div>
@@ -7,7 +7,7 @@
     <div class="popup-section">
       <div class="section-label">启用网站白名单</div>
       <div class="section-desc">
-        {{ whitelist.length === 0 ? '列表为空：插件不在任何网站启用' : '仅在以下网站启用插件' }}
+        {{ whitelist.length === 0 ? '列表为空：插件不在任何网站启用' : '直接输入 URL 即可，协议和路径会自动去除' }}
       </div>
 
       <div class="whitelist-items">
@@ -34,7 +34,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { THEME_KEY } from '@shared/constants'
 
 const DEFAULT_WHITELIST = ['lbs.qq.com']
 
@@ -42,6 +43,60 @@ const whitelist = ref<string[]>([])
 const newDomain = ref('')
 const saved = ref(false)
 const saveHint = ref('')
+
+// 主题 — 初始值 system，挂载后从 chrome.storage 加载
+const theme = ref<'system' | 'light' | 'dark'>('system')
+const systemDark = window.matchMedia('(prefers-color-scheme: dark)')
+/** systemDark.matches 不是 Vue 响应式；用 counter 强制 computed 重算。 */
+const systemChangeCounter = ref(0)
+
+const effectiveTheme = computed<'light' | 'dark'>(() => {
+  void systemChangeCounter.value // 触摸以建立响应式依赖
+  if (theme.value === 'system') return systemDark.matches ? 'dark' : 'light'
+  return theme.value
+})
+
+async function loadTheme() {
+  try {
+    const result = await chrome.storage.local.get(THEME_KEY)
+    const stored = result[THEME_KEY]
+    if (stored === 'system' || stored === 'light' || stored === 'dark') {
+      theme.value = stored
+    }
+  } catch {
+    // fallback to localStorage migration
+    const local = localStorage.getItem(THEME_KEY)
+    if (local === 'system' || local === 'light' || local === 'dark') {
+      theme.value = local
+    }
+  }
+}
+
+/** 跨上下文同步：popup/panel 任一方改主题，另一方实时跟随。 */
+function onStorageChanged(changes: Record<string, chrome.storage.StorageChange>, area: string) {
+  if (area !== 'local') return
+  const c = changes[THEME_KEY]
+  if (!c) return
+  const v = c.newValue
+  if (v === 'system' || v === 'light' || v === 'dark') {
+    theme.value = v
+  }
+}
+
+function onSystemChange() {
+  systemChangeCounter.value++
+}
+
+onMounted(async () => {
+  await loadTheme()
+  systemDark.addEventListener('change', onSystemChange)
+  chrome.storage.onChanged.addListener(onStorageChanged)
+})
+
+onUnmounted(() => {
+  systemDark.removeEventListener('change', onSystemChange)
+  chrome.storage.onChanged.removeListener(onStorageChanged)
+})
 
 // 探测当前 tab 内容脚本是否存活，若未注入则动态注入
 async function ensureContentScripts(): Promise<boolean> {
@@ -59,7 +114,6 @@ async function ensureContentScripts(): Promise<boolean> {
     }
     return true
   } catch {
-    // chrome:// 等特权页无法注入，静默失败
     return false
   }
 }
@@ -67,12 +121,11 @@ async function ensureContentScripts(): Promise<boolean> {
 onMounted(async () => {
   const result = await chrome.storage.local.get('whitelist')
   whitelist.value = Array.isArray(result.whitelist) ? result.whitelist : DEFAULT_WHITELIST
-  ensureContentScripts()  // 后台静默注入，不阻塞 UI 渲染
+  ensureContentScripts()
 })
 
 async function save() {
   await chrome.storage.local.set({ whitelist: [...whitelist.value] })
-  // storage.onChanged 通知所有存活 tab；ensureContentScripts 处理当前未注入的 tab
   const ok = await ensureContentScripts()
   saveHint.value = ok ? '已保存并立即生效' : '已保存'
   saved.value = true
@@ -81,11 +134,8 @@ async function save() {
 
 function cleanDomain(input: string): string {
   let d = input.trim().toLowerCase()
-  // 剔除协议（https:// 或 http://）
   d = d.replace(/^https?:\/\//, '')
-  // 剔除路径（/ 之后的部分）和末尾斜杠
   d = d.replace(/\/.*$/, '')
-  // 剔除端口（:8080 之类，hostname 匹配不需要端口）
   d = d.replace(/:\d+$/, '')
   return d
 }
@@ -108,22 +158,48 @@ function removeDomain(idx: number) {
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 .popup-root {
+  --c-bg: #1a1a2e;
+  --c-bg-alt: #16213e;
+  --c-bg-input: #12122a;
+  --c-border: #2d2d5e;
+  --c-text: #e8e8f0;
+  --c-text-dim: #b0b0d0;
+  --c-text-muted: #888;
+  --c-accent: #FF6B35;
+  --c-green: #4caf80;
+  --c-red: #e06060;
+
   display: flex;
   flex-direction: column;
+  background: var(--c-bg);
+  color: var(--c-text);
+}
+
+.popup-root.theme-light {
+  --c-bg: #f0f2f5;
+  --c-bg-alt: #ffffff;
+  --c-bg-input: #ffffff;
+  --c-border: #d0d5dd;
+  --c-text: #1a1a2e;
+  --c-text-dim: #555;
+  --c-text-muted: #999;
+  --c-accent: #e05520;
+  --c-green: #16a34a;
+  --c-red: #dc2626;
 }
 
 .popup-header {
   display: flex;
   align-items: center;
   padding: 10px 12px;
-  background: #16213e;
-  border-bottom: 1px solid #2d2d5e;
+  background: var(--c-bg-alt);
+  border-bottom: 1px solid var(--c-border);
 }
 
 .popup-title {
   font-size: 13px;
   font-weight: 600;
-  color: #e8e8f0;
+  color: var(--c-text);
 }
 
 .popup-section {
@@ -135,14 +211,14 @@ function removeDomain(idx: number) {
 
 .section-label {
   font-size: 11px;
-  color: #888;
+  color: var(--c-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
 .section-desc {
   font-size: 11px;
-  color: #555;
+  color: var(--c-text-dim);
 }
 
 .whitelist-items {
@@ -155,7 +231,7 @@ function removeDomain(idx: number) {
 
 .whitelist-empty {
   font-size: 11px;
-  color: #444;
+  color: var(--c-text-muted);
   text-align: center;
   padding: 8px 0;
 }
@@ -164,15 +240,15 @@ function removeDomain(idx: number) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: #16213e;
-  border: 1px solid #2d2d5e;
+  background: var(--c-bg-alt);
+  border: 1px solid var(--c-border);
   border-radius: 5px;
   padding: 5px 8px;
 }
 
 .domain-text {
   font-size: 12px;
-  color: #b0b0d0;
+  color: var(--c-text-dim);
   font-family: 'Courier New', monospace;
   flex: 1;
   overflow: hidden;
@@ -183,7 +259,7 @@ function removeDomain(idx: number) {
 .remove-btn {
   background: none;
   border: none;
-  color: #444;
+  color: var(--c-text-muted);
   cursor: pointer;
   font-size: 11px;
   padding: 0 2px;
@@ -191,41 +267,31 @@ function removeDomain(idx: number) {
   transition: color 0.12s;
 }
 
-.remove-btn:hover {
-  color: #e06060;
-}
+.remove-btn:hover { color: var(--c-red); }
 
-.add-row {
-  display: flex;
-  gap: 6px;
-}
+.add-row { display: flex; gap: 6px; }
 
 .domain-input {
   flex: 1;
-  background: #12122a;
-  border: 1px solid #2d2d5e;
+  background: var(--c-bg-input);
+  border: 1px solid var(--c-border);
   border-radius: 5px;
-  color: #e8e8f0;
+  color: var(--c-text);
   font-size: 12px;
   padding: 5px 8px;
   outline: none;
   transition: border-color 0.12s;
 }
 
-.domain-input:focus {
-  border-color: #FF6B35;
-}
-
-.domain-input::placeholder {
-  color: #444;
-}
+.domain-input:focus { border-color: var(--c-accent); }
+.domain-input::placeholder { color: var(--c-text-muted); }
 
 .add-btn {
   padding: 5px 10px;
   border-radius: 5px;
-  border: 1px solid #FF6B35;
+  border: 1px solid var(--c-accent);
   background: transparent;
-  color: #FF6B35;
+  color: var(--c-accent);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
@@ -233,18 +299,25 @@ function removeDomain(idx: number) {
   transition: background 0.15s;
 }
 
-.add-btn:hover:not(:disabled) {
-  background: rgba(255, 107, 53, 0.15);
-}
-
-.add-btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
+.add-btn:hover:not(:disabled) { background: rgba(255, 107, 53, 0.15); }
+.add-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
 .save-hint {
   font-size: 11px;
-  color: #4caf80;
+  color: var(--c-green);
   text-align: center;
 }
+
+.theme-select {
+  background: var(--c-bg-alt);
+  border: 1px solid var(--c-border);
+  border-radius: 5px;
+  color: var(--c-text);
+  font-size: 12px;
+  padding: 4px 6px;
+  outline: none;
+  cursor: pointer;
+}
+
+.theme-select:focus { border-color: var(--c-accent); }
 </style>
