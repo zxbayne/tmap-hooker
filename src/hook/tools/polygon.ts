@@ -419,9 +419,25 @@ export class PolygonTool implements ITool {
       log('[drag] map.setDraggable(false) threw:', e)
     }
 
-    this.dragMoveHandler = (evt: any) => this._onDragMove(evt)
+    this.dragMoveHandler = (evt: MouseEvent) => {
+      // 使用 document mousemove（而非 map.on），避免 TMap overlay 层拦截 mousemove 事件
+      if (!this.ctx || !this.isDragging) return
+      const container = this.ctx.map.getContainer()
+      const rect = container.getBoundingClientRect()
+      const TMap = (window as any).TMap
+      let latLng: { lat: number; lng: number }
+      try {
+        const point = new TMap.Point(evt.clientX - rect.left, evt.clientY - rect.top)
+        const projected = this.ctx.map.unprojectFromContainer(point)
+        latLng = { lat: projected.lat, lng: projected.lng }
+      } catch {
+        latLng = { lat: 0, lng: 0 }
+        return
+      }
+      this._onDragMove({ latLng })
+    }
     this.dragUpHandler = () => this._onDragUp()
-    this.ctx.map.on('mousemove', this.dragMoveHandler)
+    document.addEventListener('mousemove', this.dragMoveHandler)
     document.addEventListener('mouseup', this.dragUpHandler)
     log('[drag] started')
   }
@@ -462,8 +478,8 @@ export class PolygonTool implements ITool {
   }
 
   private _cleanupDrag(): void {
-    if (this.ctx && this.dragMoveHandler) {
-      this.ctx.map.off('mousemove', this.dragMoveHandler)
+    if (this.dragMoveHandler) {
+      document.removeEventListener('mousemove', this.dragMoveHandler)
       this.dragMoveHandler = null
     }
     if (this.dragUpHandler) {

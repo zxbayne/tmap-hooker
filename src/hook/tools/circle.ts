@@ -485,12 +485,27 @@ export class CircleTool implements ITool {
     this._commitDragStartLatLng = { lat: latLng.lat, lng: latLng.lng }
     this._commitDragOrigCenter = { ...origCenter }
     const map = this.ctx.map
-    this._commitMmHandler = (evt: any) => {
+    // 禁用地图拖拽（与多边形拖拽对齐）
+    try { map.setDraggable(false) } catch { /* 忽略 */ }
+    this._commitMmHandler = (evt: MouseEvent) => {
       if (!this._commitDragId || !this.ctx || !this._commitDragStartLatLng || !this._commitDragOrigCenter) return
+      // 使用 document mousemove（而非 map.on），避免 TMap overlay 层拦截
+      const container = this.ctx.map.getContainer()
+      const rect = container.getBoundingClientRect()
+      const TMap = (window as any).TMap
+      let lat: number, lng: number
+      try {
+        const point = new TMap.Point(evt.clientX - rect.left, evt.clientY - rect.top)
+        const projected = this.ctx.map.unprojectFromContainer(point)
+        lat = projected.lat
+        lng = projected.lng
+      } catch {
+        return
+      }
       this._commitDragMoved = true
       // offset-based：圆心 = 原始圆心 + (当前鼠标 - 拖拽起点)
-      const dLat = evt.latLng.lat - this._commitDragStartLatLng.lat
-      const dLng = evt.latLng.lng - this._commitDragStartLatLng.lng
+      const dLat = lat - this._commitDragStartLatLng.lat
+      const dLng = lng - this._commitDragStartLatLng.lng
       const center = {
         lat: this._commitDragOrigCenter.lat + dLat,
         lng: this._commitDragOrigCenter.lng + dLng,
@@ -499,7 +514,6 @@ export class CircleTool implements ITool {
       const params = this.circleParams.get(this._commitDragId)!
       const points = this._generatePoints(center, params.radius, params.nPoints)
       this.circleCoords.set(this._commitDragId, points)
-      const TMap = (window as any).TMap
       const polyLayer = this.ctx.overlays.getPolygonLayer()
       if (polyLayer) {
         const path = this._tmapClosedPath(points, TMap)
@@ -510,8 +524,9 @@ export class CircleTool implements ITool {
       log('[circle] drag-end — id:', this._commitDragId, 'moved:', this._commitDragMoved)
       if (!this._commitDragId || !this.ctx) return
       const map = this.ctx.map
-      map.off('mousemove', this._commitMmHandler!)
+      document.removeEventListener('mousemove', this._commitMmHandler!)
       document.removeEventListener('mouseup', this._commitMuHandler!)
+      try { map.setDraggable(true) } catch { /* 忽略 */ }
       if (this._commitDragMoved) {
         const center = this.circleCenters.get(this._commitDragId)!
         const params = this.circleParams.get(this._commitDragId)!
@@ -530,9 +545,7 @@ export class CircleTool implements ITool {
       this._commitMmHandler = null
       this._commitMuHandler = null
     }
-    map.on('mousemove', this._commitMmHandler)
-    // 注：mouseup 绑在 document 上而非 map，因为 TMap overlay 上鼠标松开时
-    // map 可能不触发 mouseup（被 overlay 事件层拦截）。
+    document.addEventListener('mousemove', this._commitMmHandler)
     document.addEventListener('mouseup', this._commitMuHandler)
   }
 
@@ -547,7 +560,7 @@ export class CircleTool implements ITool {
   private _cancelCommitDrag(): void {
     if (this._commitDragId && this.ctx) {
       const map = this.ctx.map
-      if (this._commitMmHandler) map.off('mousemove', this._commitMmHandler)
+      if (this._commitMmHandler) document.removeEventListener('mousemove', this._commitMmHandler)
       if (this._commitMuHandler) document.removeEventListener('mouseup', this._commitMuHandler)
     }
     this._commitDragId = null
