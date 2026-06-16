@@ -216,8 +216,11 @@ export class OverlayManager {
     initialGeometries?: any[],
   ) {
     if (this.polygonLayer) {
-      // 图层已存在：回调由 prefix 路由分派，不覆盖；
-      // 仅追加初始几何体。
+      // 图层已存在：更新回调（后续 addPolygon / setPreviewPolygon 可能带入新的回调）;
+      // 初始几何体仅追加。
+      if (onClickCb) this.onPolygonClick = onClickCb
+      if (onMousedownCb) this.onPolygonMousedown = onMousedownCb
+      this._attachMousedownHandler()
       if (initialGeometries && initialGeometries.length > 0) {
         this.polygonLayer.add(initialGeometries)
       }
@@ -885,12 +888,12 @@ export class OverlayManager {
         points: points.map((p: LatLng) => ({ lat: p.lat, lng: p.lng })),
         visible: this.measureVisible.get(id) ?? true,
       })),
+      circles: [],
     }
   }
 
   /**
    * 从快照恢复所有持久覆盖物数据到当前地图。
-   * 直接操作底层图层，不依赖工具回调——适合在工具未激活时批量重建。
    */
   restore(
     data: OverlaySnapshotItem,
