@@ -20,6 +20,8 @@ export class CircleTool implements ITool {
   readonly id = TOOL_IDS.CIRCLE
 
   private ctx: ToolContext | null = null
+  /** 持久化 overlays 引用，不随 deactivate 清空，确保切工具后仍可高亮点击的图形。 */
+  private overlays: any = null
   private idCounter = 0
   private mode: CircleMode = 'idle'
 
@@ -75,6 +77,7 @@ export class CircleTool implements ITool {
 
   activate(ctx: ToolContext): void {
     this.ctx = ctx
+    this.overlays = ctx.overlays
     this.mode = 'idle'
     this.pending = null
     ctx.overlays.setCircleClickHandler(this._onCircleClick.bind(this))
@@ -307,6 +310,8 @@ export class CircleTool implements ITool {
     this._stopPlacedDrag()
     const { id, center, radius, nPoints } = this.pending
     const points = this._generatePoints(center, radius, nPoints)
+    // 先清理预览多边形（circle-preview），再添加正式多边形
+    this.ctx.overlays.removePreviewPolygon(PREVIEW_ID)
     this.ctx.overlays.addPolygon(id, points, () => {}, undefined)
     this.circleIds.add(id)
     this.circleCenters.set(id, center)
@@ -464,6 +469,8 @@ export class CircleTool implements ITool {
     const center = this.circleCenters.get(id)
     const params = this.circleParams.get(id)
     if (!center || !params) return
+    // 地图高亮（复用 polygonLayer 的 highlight 样式）
+    this.overlays.setPolygonHighlight(id)
     const points = this.circleCoords.get(id)!
     const { area, perimeter } = this._computeGeometry(points)
     sendToPanel({
@@ -478,6 +485,8 @@ export class CircleTool implements ITool {
     if (!this.circleIds.has(id) || !this.ctx) return
     // 编辑模式下由 center-handle 拖拽处理，不启动 commit-drag
     if (this.editingId) { log('[circle] mousedown SKIP — editing'); return }
+    // 自动选中并高亮（对齐多边形拖拽体验）
+    this.overlays.setPolygonHighlight(id)
     const origCenter = this.circleCenters.get(id)
     if (!origCenter) { log('[circle] mousedown SKIP — no origCenter'); return }
     this._commitDragId = id
@@ -499,7 +508,8 @@ export class CircleTool implements ITool {
         const projected = this.ctx.map.unprojectFromContainer(point)
         lat = projected.lat
         lng = projected.lng
-      } catch {
+      } catch (e: any) {
+        log('[circle] commit-drag unproject FAILED:', e?.message ?? e)
         return
       }
       this._commitDragMoved = true
@@ -533,6 +543,8 @@ export class CircleTool implements ITool {
         const points = this.circleCoords.get(this._commitDragId)!
         const { area, perimeter } = this._computeGeometry(points)
         this.ctx.overlays.addPolygon(this._commitDragId, points, () => {}, undefined)
+        // 拖拽结束后恢复高亮（addPolygon 以 'default' 重建，需要补 highlight）
+        this.overlays.setPolygonHighlight(this._commitDragId)
         sendToPanel({
           type: HookEvent.LAYER_DRAWN,
           payload: { id: this._commitDragId, kind: 'circle', data: { kind: 'circle', center, radius: params.radius, nPoints: params.nPoints, area, perimeter } },
