@@ -292,6 +292,9 @@ export class OverlayManager {
    */
   addPolygon(id: string, points: LatLng[], onClickCb: (id: string) => void, onMousedownCb?: (id: string, latLng: any) => void): void {
     this.ensurePolygonLayer(onClickCb, onMousedownCb)
+    // 强设 mousedown 回调：确保即使 polygonLayer 在预览阶段先创建（丢失了 mousedown 回调），
+    // 此处 addPolygon 也会把回调补上。
+    if (onMousedownCb) this.setPolygonMousedownHandler(onMousedownCb)
 
     const path = this._closedPath(points)
     const geometry = { id, styleId: 'default', paths: [path] }
@@ -982,6 +985,12 @@ export class OverlayManager {
   /** 设置圆形专有 mousedown 回调（由 CircleTool 注册，用于拖拽移动）。 */
   setCircleMousedownHandler(cb: (id: string, latLng: any) => void): void {
     this.onCircleMousedown = cb
+    this._attachMousedownHandler()
+  }
+
+  /** 设置多边形专有 mousedown 回调（由 PolygonTool 注册，用于拖拽移动）。 */
+  setPolygonMousedownHandler(cb: (id: string, latLng: any) => void): void {
+    this.onPolygonMousedown = cb
     this._attachMousedownHandler()
   }
 
