@@ -459,6 +459,7 @@ export class CircleTool implements ITool {
   }
 
   private _onCircleClick(id: string): void {
+    log('[circle] click — id:', id, 'editing:', !!this.editingId)
     if (!this.circleIds.has(id) || !this.ctx) return
     const center = this.circleCenters.get(id)
     const params = this.circleParams.get(id)
@@ -469,14 +470,16 @@ export class CircleTool implements ITool {
       type: HookEvent.LAYER_SELECTED,
       payload: { id, data: { kind: 'circle', center, radius: params.radius, nPoints: params.nPoints, area, perimeter } },
     })
+    log('[circle] selected:', id)
   }
 
   private _onCircleMousedown(id: string, latLng: any): void {
+    log('[circle] mousedown — id:', id, 'editing:', !!this.editingId)
     if (!this.circleIds.has(id) || !this.ctx) return
     // 编辑模式下由 center-handle 拖拽处理，不启动 commit-drag
-    if (this.editingId) return
+    if (this.editingId) { log('[circle] mousedown SKIP — editing'); return }
     const origCenter = this.circleCenters.get(id)
-    if (!origCenter) return
+    if (!origCenter) { log('[circle] mousedown SKIP — no origCenter'); return }
     this._commitDragId = id
     this._commitDragMoved = false
     this._commitDragStartLatLng = { lat: latLng.lat, lng: latLng.lng }
@@ -504,10 +507,11 @@ export class CircleTool implements ITool {
       }
     }
     this._commitMuHandler = () => {
+      log('[circle] drag-end — id:', this._commitDragId, 'moved:', this._commitDragMoved)
       if (!this._commitDragId || !this.ctx) return
       const map = this.ctx.map
       map.off('mousemove', this._commitMmHandler!)
-      map.off('mouseup', this._commitMuHandler!)
+      document.removeEventListener('mouseup', this._commitMuHandler!)
       if (this._commitDragMoved) {
         const center = this.circleCenters.get(this._commitDragId)!
         const params = this.circleParams.get(this._commitDragId)!
@@ -527,7 +531,9 @@ export class CircleTool implements ITool {
       this._commitMuHandler = null
     }
     map.on('mousemove', this._commitMmHandler)
-    map.on('mouseup', this._commitMuHandler)
+    // 注：mouseup 绑在 document 上而非 map，因为 TMap overlay 上鼠标松开时
+    // map 可能不触发 mouseup（被 overlay 事件层拦截）。
+    document.addEventListener('mouseup', this._commitMuHandler)
   }
 
   private _tmapClosedPath(points: LatLng[], TMap: any): any[] {
