@@ -202,6 +202,7 @@ function onLayerToggleVisible(id: string) {
   if (!layer) return
   switch (layer.kind) {
     case 'polygon': togglePolygonVisible(id); break
+    case 'circle': togglePolygonVisible(id); break   // 圆形也是多边形图层
     case 'measure': toggleMeasureVisible(id); break
     case 'point-marker': togglePointMarkerVisible(id); break
   }
@@ -212,6 +213,7 @@ function onLayerDelete(id: string) {
   if (!layer) return
   switch (layer.kind) {
     case 'polygon': deletePolygon(id); break
+    case 'circle': deletePolygon(id); break   // 圆形也是多边形图层
     case 'measure': deleteMeasure(id); break
     case 'point-marker': deletePointMarker(id); break
   }
@@ -222,6 +224,7 @@ function onLayerRename(id: string, name: string) {
   if (!layer) return
   switch (layer.kind) {
     case 'polygon': renamePolygon(id, name); break
+    case 'circle': { /* 圆形名称仅 panel 本地维护 */ break }
     case 'measure': renameMeasure(id, name); break
     case 'point-marker': renamePointMarker(id, name); break
   }

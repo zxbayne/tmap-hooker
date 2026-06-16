@@ -46,6 +46,8 @@ export const enum HookEvent {
   CIRCLE_EDIT_STARTED = 'CIRCLE_EDIT_STARTED',
   CIRCLE_EDIT_COMMITTED = 'CIRCLE_EDIT_COMMITTED',
   CIRCLE_EDIT_CANCELLED = 'CIRCLE_EDIT_CANCELLED',
+  // 圆形完成事件
+  CIRCLE_DRAWN = 'CIRCLE_DRAWN',
   // 测距图层事件
   MEASURE_DRAWN = 'MEASURE_DRAWN',
   MEASURE_SELECTED = 'MEASURE_SELECTED',
@@ -199,6 +201,7 @@ export interface PointMarkerDeletedPayload {
 export interface OverlaySnapshotItem {
   polygons: Array<{ id: string; points: LatLng[]; visible: boolean }>
   pointMarkers: Array<{ id: string; lat: number; lng: number; name: string; visible: boolean }>
+  measures: Array<{ id: string; points: LatLng[]; visible: boolean }>
 }
 
 /** 地图恢复后发送，携带恢复的覆盖物数量。 */
@@ -245,6 +248,21 @@ export interface CircleUpdatedPayload {
 /** 圆形编辑事件负载。 */
 export interface CircleEditEventPayload {
   id: string
+}
+
+/** 圆形完成事件负载。 */
+export interface CircleDrawnPayload {
+  id: string
+  /** 圆心坐标。 */
+  center: LatLng
+  /** 半径（米）。 */
+  radius: number
+  /** 拟合边数。 */
+  nPoints: number
+  /** 面积（平方米）。 */
+  area: number
+  /** 周长（米）。 */
+  perimeter: number
 }
 
 /** 测距图层数据模型。 */
@@ -437,6 +455,7 @@ export type HookMessage =
   | { source: typeof HOOK_SOURCE; type: HookEvent.CIRCLE_EDIT_STARTED; payload: CircleEditEventPayload }
   | { source: typeof HOOK_SOURCE; type: HookEvent.CIRCLE_EDIT_COMMITTED; payload: CircleEditEventPayload }
   | { source: typeof HOOK_SOURCE; type: HookEvent.CIRCLE_EDIT_CANCELLED; payload: CircleEditEventPayload }
+  | { source: typeof HOOK_SOURCE; type: HookEvent.CIRCLE_DRAWN; payload: CircleDrawnPayload }
   | { source: typeof HOOK_SOURCE; type: HookEvent.MEASURE_DRAWN; payload: MeasureDrawnPayload }
   | { source: typeof HOOK_SOURCE; type: HookEvent.MEASURE_SELECTED; payload: MeasureSelectedPayload }
   | { source: typeof HOOK_SOURCE; type: HookEvent.MEASURE_EDIT_STARTED; payload: MeasureEditEventPayload }

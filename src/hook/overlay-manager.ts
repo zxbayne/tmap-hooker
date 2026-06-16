@@ -859,6 +859,11 @@ export class OverlayManager {
         name: this.pointMarkerNames.get(id) ?? '',
         visible: this.pointMarkerVisible.get(id) ?? true,
       })),
+      measures: Array.from(this.measures.entries()).map(([id, points]) => ({
+        id,
+        points: points.map((p: LatLng) => ({ lat: p.lat, lng: p.lng })),
+        visible: this.measureVisible.get(id) ?? true,
+      })),
     }
   }
 
@@ -870,6 +875,7 @@ export class OverlayManager {
     data: OverlaySnapshotItem,
     polygonClickCb: (id: string) => void,
     polygonMousedownCb?: (id: string, latLng: any) => void,
+    measureClickCb?: (id: string) => void,
   ): void {
     // 恢复多边形——将几何体通过 initialGeometries 传入构造器，
     // 避免地图未就绪时 add() 不渲染的问题。
@@ -898,6 +904,29 @@ export class OverlayManager {
       }
       this.ensurePointMarkerLayer(markerGeos)
       this.ensurePointLabelLayer(labelGeos)
+    }
+    // 恢复测距
+    if (data.measures && data.measures.length > 0) {
+      for (const m of data.measures) {
+        if (m.points.length < 2) continue
+        // 计算段距离
+        const segDists: number[] = []
+        for (let i = 0; i < m.points.length - 1; i++) {
+          const a = m.points[i]
+          const b = m.points[i + 1]
+          const R = 6371000
+          const dLat = (b.lat - a.lat) * Math.PI / 180
+          const dLng = (b.lng - a.lng) * Math.PI / 180
+          const lat1 = a.lat * Math.PI / 180
+          const lat2 = b.lat * Math.PI / 180
+          const sinDLat = Math.sin(dLat / 2)
+          const sinDLng = Math.sin(dLng / 2)
+          const a2 = sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLng * sinDLng
+          segDists.push(R * 2 * Math.atan2(Math.sqrt(a2), Math.sqrt(1 - a2)))
+        }
+        this.addMeasure(m.id, m.points, segDists, measureClickCb ?? (() => {}))
+        if (!m.visible) this.setMeasureVisible(m.id, false)
+      }
     }
   }
 

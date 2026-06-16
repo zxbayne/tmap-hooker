@@ -213,9 +213,12 @@ export class CircleTool implements ITool {
     this.circleCenters.set(id, center)
     this.circleParams.set(id, { radius, nPoints })
     this.circleCoords.set(id, points)
-    sendToPanel({ type: HookEvent.POLYGON_DRAWN, payload: { id, count: nPoints } })
     const { area, perimeter } = this._computeGeometry(points)
-    sendToPanel({ type: HookEvent.POLYGON_GEOMETRY, payload: { id, area, perimeter } })
+    // 圆形完成：发射专用事件，区别于手绘多边形
+    sendToPanel({
+      type: HookEvent.CIRCLE_DRAWN,
+      payload: { id, center, radius, nPoints, area, perimeter },
+    })
     this.pending = null
     this.mode = 'idle'
     log('CircleTool finishCircle:', id, 'r=', radius, 'n=', nPoints)
@@ -265,9 +268,12 @@ export class CircleTool implements ITool {
     this.ctx?.overlays.setPreviewPolygon(id, points, () => {}, undefined)
     this.ctx?.overlays.addPolygon(id, points, () => {}, undefined)
     this._removeCenterHandle()
-    sendToPanel({ type: HookEvent.CIRCLE_EDIT_COMMITTED, payload: { id } })
     const { area, perimeter } = this._computeGeometry(points)
-    sendToPanel({ type: HookEvent.POLYGON_GEOMETRY, payload: { id, area, perimeter } })
+    sendToPanel({ type: HookEvent.CIRCLE_EDIT_COMMITTED, payload: { id } })
+    sendToPanel({
+      type: HookEvent.CIRCLE_DRAWN,
+      payload: { id, center: this.editCenter, radius: this.editRadius, nPoints: this.editNPoints, area, perimeter },
+    })
     this.editingId = null
     this.editSnapshot = null
     log('CircleTool commitEditCircle:', id)

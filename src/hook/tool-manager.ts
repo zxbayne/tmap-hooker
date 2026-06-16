@@ -70,10 +70,14 @@ export class ToolManager {
       const mdCb = polygonTool?.getMousedownHandler()
       restoredPoly = snap.polygons.length
       restoredPm = snap.pointMarkers.length
+      let restoredMeasures = snap.measures?.length ?? 0
       this.pendingSnapshot = null
       setTimeout(() => {
-        this.overlays!.restore(snap, clickCb, mdCb)
-        log('snapshot restored:', restoredPoly, 'polygons,', restoredPm, 'point markers')
+        this.overlays!.restore(snap, clickCb, mdCb, (id: string) => {
+          sendToPanel({ type: HookEvent.MEASURE_SELECTED, payload: { id } })
+        })
+        const totalRestored = restoredPoly + restoredPm + restoredMeasures
+        log('snapshot restored:', restoredPoly, 'polygons,', restoredPm, 'point markers,', restoredMeasures, 'measures')
       }, 0)
     }
 

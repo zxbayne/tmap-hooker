@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue'
 import { HookEvent, PanelCmd } from '@shared/protocol'
-import type { HookMessage, SegmentAddedPayload, MeasureDrawnPayload, LayerKind } from '@shared/protocol'
+import type { HookMessage, SegmentAddedPayload, MeasureDrawnPayload, CircleDrawnPayload, LayerKind } from '@shared/protocol'
 import { useMapBridge } from './useMapBridge'
 import { formatDistance } from '@shared/utils/distance'
 import { TOOL_IDS } from '@shared/tool-config'
@@ -44,6 +44,19 @@ export interface UnifiedLayer {
   selected: boolean
 }
 
+/** 圆形图层数据模型（Panel 端维护）。 */
+export interface CircleLayer {
+  id: string
+  name: string
+  visible: boolean
+  selected: boolean
+  center: { lat: number; lng: number }
+  radius: number
+  nPoints: number
+  area: number | null
+  perimeter: number | null
+}
+
 export function useTool() {
   const { onHookEvent, sendCmd } = useMapBridge()
 
@@ -80,6 +93,10 @@ export function useTool() {
   /** 图层顺序：按 id 排列，新图层追加到末尾，拖拽后可重新排列。 */
   const layerOrder = ref<string[]>([])
 
+  // 圆形图层状态
+  const circleLayers = ref<CircleLayer[]>([])
+  let circleNameCounter = 0
+
   /** 统一图层列表（多来源聚合，按 layerOrder 排序）。 */
   const unifiedLayers = computed<UnifiedLayer[]>(() => {
     const layers: UnifiedLayer[] = []
@@ -87,21 +104,26 @@ export function useTool() {
     for (const p of polygonLayers.value) {
       layers.push({ id: p.id, kind: 'polygon', name: p.name, visible: p.visible, selected: p.selected })
     }
+    for (const c of circleLayers.value) {
+      layers.push({ id: c.id, kind: 'circle', name: c.name, visible: c.visible, selected: c.selected })
+    }
     for (const m of measureLayers.value) {
       layers.push({ id: m.id, kind: 'measure', name: m.name, visible: m.visible, selected: m.selected })
     }
     for (const pm of pointMarkers.value) {
       layers.push({ id: pm.id, kind: 'point-marker', name: pm.name, visible: pm.visible, selected: pm.selected })
     }
-    // 圆形暂不加入统一列表，待后续版本统一
+    // 绘制中/编辑中的圆形预览：仅当未提交时临时显示
     if (circlePreview.value && (circleMode.value === 'placed' || circleMode.value === 'editing')) {
-      layers.push({
-        id: circlePreview.value.id,
-        kind: 'circle',
-        name: `圆形 ${circlePreview.value.id.slice(-4)}`,
-        visible: true,
-        selected: circleMode.value === 'editing',
-      })
+      if (!circleLayers.value.some(c => c.id === circlePreview.value!.id)) {
+        layers.push({
+          id: circlePreview.value.id,
+          kind: 'circle',
+          name: `圆形 ${circlePreview.value.id.slice(-4)}`,
+          visible: true,
+          selected: circleMode.value === 'editing',
+        })
+      }
     }
 
     // 按 layerOrder 排序：order 中有序号的优先，未在 order 中的追加到末尾
@@ -292,6 +314,34 @@ export function useTool() {
         circlePreviewGeometry.value = null
         break
 
+      case HookEvent.CIRCLE_DRAWN: {
+        const p = msg.payload as CircleDrawnPayload
+        const existing = circleLayers.value.find(c => c.id === p.id)
+        if (existing) {
+          // 编辑提交：更新已有数据
+          existing.center = p.center
+          existing.radius = p.radius
+          existing.nPoints = p.nPoints
+          existing.area = p.area
+          existing.perimeter = p.perimeter
+        } else {
+          // 新建圆形
+          circleLayers.value.push({
+            id: p.id,
+            name: `圆形 ${++circleNameCounter}`,
+            visible: true,
+            selected: false,
+            center: p.center,
+            radius: p.radius,
+            nPoints: p.nPoints,
+            area: p.area,
+            perimeter: p.perimeter,
+          })
+          layerOrder.value.push(p.id)
+        }
+        break
+      }
+
       case HookEvent.MEASURE_DRAWN: {
         const payload = msg.payload as MeasureDrawnPayload
         measureLayers.value.push({ ...payload })
@@ -357,6 +407,8 @@ export function useTool() {
     circlePreview.value = null
     circlePreviewGeometry.value = null
     measureLayers.value = []
+    circleLayers.value = []
+    circleNameCounter = 0
     layerOrder.value = []
     sendCmd({ type: PanelCmd.CLEAR })
   }
@@ -582,6 +634,7 @@ export function useTool() {
     circlePreviewGeometry,
     // measure + unified layers
     measureLayers,
+    circleLayers,
     unifiedLayers,
     layerOrder,
     // commands
