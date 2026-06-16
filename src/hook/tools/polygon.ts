@@ -1,4 +1,5 @@
 import { HookEvent, sendToPanel } from '@shared/protocol'
+import type { LayerKind, LayerDrawnPayload, LayerSelectedPayload, LayerDeletedPayload, LayerEditEventPayload, PolygonLayerData } from '@shared/protocol'
 import { TOOL_IDS } from '@shared/tool-config'
 import { parseCoords, coordsToText } from '@shared/utils/parse-coords'
 import { log } from '../logger'
@@ -143,7 +144,7 @@ export class PolygonTool implements ITool {
     )
     this.polygonIds.add(id)
     this.polygonCoords.set(id, coords)
-    sendToPanel({ type: HookEvent.POLYGON_DRAWN, payload: { id, count } })
+    sendToPanel({ type: HookEvent.LAYER_DRAWN, payload: { id, kind: 'polygon' as LayerKind, data: { kind: 'polygon', coords, area: null, perimeter: null } as PolygonLayerData } })
     this._sendGeometryInfo(id, coords)
     log('polygon finished, id =', id, 'points =', count)
     this.enterIdleMode()
@@ -216,7 +217,7 @@ export class PolygonTool implements ITool {
     )
     this.polygonIds.add(id)
     this.polygonCoords.set(id, points)
-    sendToPanel({ type: HookEvent.POLYGON_DRAWN, payload: { id, count: points.length } })
+    sendToPanel({ type: HookEvent.LAYER_DRAWN, payload: { id, kind: 'polygon' as LayerKind, data: { kind: 'polygon', coords: points, area: null, perimeter: null } as PolygonLayerData } })
     this._sendGeometryInfo(id, points)
     log('polygon drawn from input, id =', id, 'points =', points.length)
   }
@@ -257,7 +258,7 @@ export class PolygonTool implements ITool {
     if (this.selectedId === id) {
       this.selectedId = null
     }
-    sendToPanel({ type: HookEvent.POLYGON_DELETED, payload: { id } })
+    sendToPanel({ type: HookEvent.LAYER_DELETED, payload: { id } })
     log('polygon deleted by id:', id)
   }
 
@@ -276,7 +277,7 @@ export class PolygonTool implements ITool {
     if (panToLocation && coords.length > 0 && this.ctx) {
       this._panToCenter(coords)
     }
-    sendToPanel({ type: HookEvent.POLYGON_SELECTED, payload: { id, coords } })
+    sendToPanel({ type: HookEvent.LAYER_SELECTED, payload: { id, data: { kind: 'polygon', coords, area: null, perimeter: null } as PolygonLayerData } })
     this._sendGeometryInfo(id, coords)
     log('polygon selected by panel:', id)
   }
@@ -342,7 +343,7 @@ export class PolygonTool implements ITool {
     this.selectedId = id
     this.ctx?.overlays.setPolygonHighlight(id)
     const coords = this.polygonCoords.get(id) ?? []
-    sendToPanel({ type: HookEvent.POLYGON_SELECTED, payload: { id, coords } })
+    sendToPanel({ type: HookEvent.LAYER_SELECTED, payload: { id, data: { kind: 'polygon', coords, area: null, perimeter: null } as PolygonLayerData } })
     this._sendGeometryInfo(id, coords)
     log('polygon selected:', id)
   }
@@ -359,7 +360,7 @@ export class PolygonTool implements ITool {
       if (this.selectedId !== null) {
         this.selectedId = null
         this.ctx?.overlays.setPolygonHighlight(null)
-        sendToPanel({ type: HookEvent.POLYGON_SELECTED, payload: { id: '', coords: [] } })
+        sendToPanel({ type: HookEvent.LAYER_SELECTED, payload: { id: '' } })
         log('polygon deselected (map click)')
       }
     }
@@ -423,8 +424,11 @@ export class PolygonTool implements ITool {
       (clickedId, latLng) => this._onPolygonMousedown(clickedId, latLng),
     )
     this.ctx.overlays.setPolygonHighlight(id)
-    sendToPanel({ type: HookEvent.POLYGON_SELECTED, payload: { id, coords: finalCoords } })
-    this._sendGeometryInfo(id, finalCoords)
+    // 内联计算 area/perimeter，避免 LAYER_SELECTED(null) + POLYGON_GEOMETRY 两步的时序依赖
+    const { area, perimeter } = this._tryComputeGeometry(finalCoords)
+    sendToPanel({ type: HookEvent.LAYER_SELECTED, payload: { id, data: { kind: 'polygon', coords: finalCoords, area, perimeter } as PolygonLayerData } })
+    // area/perimeter 已内联，只在计算失败（null）时才补发
+    if (area === null) this._sendGeometryInfo(id, finalCoords)
 
     this._cleanupDrag()
 
@@ -532,7 +536,7 @@ export class PolygonTool implements ITool {
     }
 
     this._unregisterIdleClick()
-    sendToPanel({ type: HookEvent.POLYGON_EDIT_STARTED, payload: { id } })
+    sendToPanel({ type: HookEvent.LAYER_EDIT_STARTED, payload: { id, kind: 'polygon' } })
     log('startEditById:', id)
   }
 
@@ -553,7 +557,9 @@ export class PolygonTool implements ITool {
     this.ctx.overlays.setPolygonVisible(id, true)
     this.editingId = null
     this._registerIdleClick()
-    sendToPanel({ type: HookEvent.POLYGON_EDIT_FINISHED, payload: { id, coords: finalCoords } })
+    sendToPanel({ type: HookEvent.LAYER_EDIT_COMMITTED, payload: { id, kind: 'polygon' } })
+    // Also send updated layer data
+    sendToPanel({ type: HookEvent.LAYER_DRAWN, payload: { id, kind: 'polygon' as LayerKind, data: { kind: 'polygon', coords: finalCoords, area: null, perimeter: null } as PolygonLayerData } })
     this._sendGeometryInfo(id, finalCoords)
     log('finishEdit:', id)
   }
@@ -563,7 +569,7 @@ export class PolygonTool implements ITool {
     if (this.editingId === null) return
     const id = this.editingId
     this._cancelEditInternal()
-    sendToPanel({ type: HookEvent.POLYGON_EDIT_CANCELLED, payload: { id } })
+    sendToPanel({ type: HookEvent.LAYER_EDIT_CANCELLED, payload: { id, kind: 'polygon' } })
     log('cancelEdit:', id)
   }
 
@@ -685,6 +691,27 @@ export class PolygonTool implements ITool {
       log('_sendGeometryInfo:', id, 'area:', area, 'perimeter:', perimeter)
     } catch (e) {
       log('_sendGeometryInfo failed:', e)
+    }
+  }
+
+  /**
+   * 同步计算多边形面积和周长，失败时返回 null。
+   * 供 _onDragUp / finishEdit 等需要在同一消息里携带几何数据的场景使用，
+   * 避免先发 null 再补发 POLYGON_GEOMETRY 产生的时序依赖。
+   */
+  private _tryComputeGeometry(coords: LatLng[]): { area: number | null; perimeter: number | null } {
+    if (coords.length < 3) return { area: null, perimeter: null }
+    const TMap = (window as any).TMap
+    if (!TMap?.geometry) return { area: null, perimeter: null }
+    try {
+      const path = coords.map((p) => new TMap.LatLng(p.lat, p.lng))
+      const closedPath = [...path, path[0]]
+      const perimeter = TMap.geometry.computeDistance(closedPath) as number
+      const area = TMap.geometry.computeArea(closedPath) as number
+      return { area, perimeter }
+    } catch (e) {
+      log('_tryComputeGeometry failed:', e)
+      return { area: null, perimeter: null }
     }
   }
 }

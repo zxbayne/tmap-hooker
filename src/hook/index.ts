@@ -49,11 +49,25 @@ window.addEventListener('message', (event: MessageEvent) => {
       setDebug(msg.payload.enabled)
       log('debug mode set to:', msg.payload.enabled)
       break
+    // ── 通用图层命令 ──
+    case PanelCmd.LAYER_SELECT:
+      toolManager.dispatchLayerCommand(PanelCmd.LAYER_SELECT, msg.payload)
+      break
+    case PanelCmd.LAYER_DELETE:
+      toolManager.dispatchLayerCommand(PanelCmd.LAYER_DELETE, msg.payload)
+      break
+    case PanelCmd.LAYER_TOGGLE:
+      toolManager.dispatchLayerCommand(PanelCmd.LAYER_TOGGLE, msg.payload)
+      break
+    case PanelCmd.LAYER_RENAME:
+      toolManager.dispatchLayerCommand(PanelCmd.LAYER_RENAME, msg.payload)
+      break
+    case PanelCmd.LAYER_EDIT:
+      toolManager.dispatchLayerCommand(PanelCmd.LAYER_EDIT, msg.payload)
+      break
+    // ── 工具专有命令 ──
     case PanelCmd.DRAW_POLYGON:
       toolManager.drawPolygon(msg.payload.input)
-      break
-    case PanelCmd.DELETE_POLYGON:
-      toolManager.deletePolygonById(msg.payload.id)
       break
     case PanelCmd.START_DRAWING_POLYGON:
       toolManager.startDrawingPolygon()
@@ -67,35 +81,11 @@ window.addEventListener('message', (event: MessageEvent) => {
     case PanelCmd.UNDO_POLYGON_POINT:
       toolManager.undoPolygonPoint()
       break
-    case PanelCmd.SELECT_POLYGON:
-      toolManager.selectPolygonById(msg.payload.id)
-      break
-    case PanelCmd.TOGGLE_POLYGON_VISIBLE:
-      toolManager.togglePolygonVisible(msg.payload.id, msg.payload.visible)
-      break
-    case PanelCmd.START_EDIT_POLYGON:
-      toolManager.startEditPolygon(msg.payload.id)
-      break
     case PanelCmd.FINISH_EDIT_POLYGON:
       toolManager.finishEditPolygon()
       break
     case PanelCmd.CANCEL_EDIT_POLYGON:
       toolManager.cancelEditPolygon()
-      break
-    case PanelCmd.DELETE_POINT_MARKER:
-      toolManager.deletePointMarker(msg.payload.id)
-      break
-    case PanelCmd.SELECT_POINT_MARKER:
-      toolManager.selectPointMarker(msg.payload.id)
-      break
-    case PanelCmd.TOGGLE_POINT_MARKER_VISIBLE:
-      toolManager.togglePointMarkerVisible(msg.payload.id, msg.payload.visible)
-      break
-    case PanelCmd.RENAME_POINT_MARKER:
-      toolManager.renamePointMarker(msg.payload.id, msg.payload.name)
-      break
-    case PanelCmd.IMPORT_POINT_MARKERS:
-      toolManager.importPointMarkers(msg.payload.input)
       break
     case PanelCmd.UPDATE_CIRCLE:
       toolManager.updateCircle(msg.payload.id, msg.payload.radius, msg.payload.nPoints)
@@ -109,41 +99,20 @@ window.addEventListener('message', (event: MessageEvent) => {
     case PanelCmd.CANCEL_DRAWING_CIRCLE:
       toolManager.cancelDrawingCircle()
       break
-    case PanelCmd.START_EDIT_CIRCLE:
-      toolManager.startEditCircle(msg.payload.id)
-      break
     case PanelCmd.COMMIT_EDIT_CIRCLE:
       toolManager.commitEditCircle()
       break
     case PanelCmd.CANCEL_EDIT_CIRCLE:
       toolManager.cancelEditCircle()
       break
-    case PanelCmd.DELETE_MEASURE:
-      toolManager.deleteMeasure(msg.payload.id)
-      break
-    case PanelCmd.SELECT_MEASURE:
-      toolManager.selectMeasure(msg.payload.id)
-      break
-    case PanelCmd.TOGGLE_MEASURE_VISIBLE:
-      toolManager.toggleMeasureVisible(msg.payload.id, msg.payload.visible)
-      break
-    case PanelCmd.RENAME_MEASURE:
-      toolManager.renameMeasure(msg.payload.id, msg.payload.name)
-      break
-    // 测距编辑命令
-    case PanelCmd.START_EDIT_MEASURE:
-      toolManager.startEditMeasure(
-        msg.payload.id,
-        msg.payload.name,
-        msg.payload.points,
-        msg.payload.segmentDistances,
-      )
-      break
     case PanelCmd.COMMIT_EDIT_MEASURE:
       toolManager.commitEditMeasure()
       break
     case PanelCmd.CANCEL_EDIT_MEASURE:
     case PanelCmd.UPDATE_MEASURE_VERTEX:
+      break
+    case PanelCmd.IMPORT_POINT_MARKERS:
+      toolManager.importPointMarkers(msg.payload.input)
       break
   }
 })

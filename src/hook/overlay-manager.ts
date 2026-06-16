@@ -46,6 +46,13 @@ export class OverlayManager {
   /** 多边形 mousedown 回调，用于实现拖动。 */
   private onPolygonMousedown: ((id: string, latLng: any) => void) | null = null
 
+  /** 圆形专有回调（按 circle- 前缀路由，不与多边形回调混淆）。 */
+  private onCircleClick: ((id: string) => void) | null = null
+  private onCircleMousedown: ((id: string, latLng: any) => void) | null = null
+
+  /** mousedown handler 是否已绑定到 polygonLayer（只绑一次）。 */
+  private _mousedownAttached = false
+
   // ── Measure layers (persistent) ────────────────────────────────────────────
 
   /** 测距折线图层（线、距离标签、顶点标记）。 */
@@ -182,12 +189,18 @@ export class OverlayManager {
   // ── Polygons ──────────────────────────────────────────────────────────────
 
   private _attachMousedownHandler(): void {
+    // 只绑定一次（mousedown handler 内部通过 prefix 路由到不同工具的 callback）
+    if (this._mousedownAttached || !this.polygonLayer) return
+    this._mousedownAttached = true
     this.polygonLayer.on('mousedown', (evt: any) => {
       const id: string = evt.geometry?.id
-      if (id) {
-        evt.originalEvent?.stopPropagation()
-        this.onPolygonMousedown?.(id, evt.latLng)
+      if (!id) return
+      evt.originalEvent?.stopPropagation()
+      if (id.startsWith('circle-') && this.onCircleMousedown) {
+        this.onCircleMousedown(id, evt.latLng)
+        return
       }
+      this.onPolygonMousedown?.(id, evt.latLng)
     })
   }
 
@@ -197,11 +210,8 @@ export class OverlayManager {
     initialGeometries?: any[],
   ) {
     if (this.polygonLayer) {
-      if (onMousedownCb && !this.onPolygonMousedown) {
-        this.onPolygonMousedown = onMousedownCb
-        this._attachMousedownHandler()
-      }
-      // 已存在图层时，通过 add 追加初始几何体
+      // 图层已存在：回调由 prefix 路由分派，不覆盖；
+      // 仅追加初始几何体。
       if (initialGeometries && initialGeometries.length > 0) {
         this.polygonLayer.add(initialGeometries)
       }
@@ -212,21 +222,21 @@ export class OverlayManager {
       map: this.map,
       styles: {
         default: new this.TMap.PolygonStyle({
-          color: 'rgba(74, 144, 217, 0.12)',
+          color: 'rgba(74, 144, 217, 0.18)',
           borderColor: '#4A90D9',
           borderWidth: 2,
           borderDashArray: [0, 0],
         }),
         highlight: new this.TMap.PolygonStyle({
-          color: 'rgba(74, 144, 217, 0.25)',
+          color: 'rgba(74, 144, 217, 0.30)',
           borderColor: '#2B6CB0',
           borderWidth: 3,
           borderDashArray: [0, 0],
         }),
         /** 绘制中的实时预览多边形，使用更低透明度以区分已提交的多边形。 */
         preview: new this.TMap.PolygonStyle({
-          color: 'rgba(74, 144, 217, 0.06)',
-          borderColor: 'rgba(74, 144, 217, 0.5)',
+          color: 'rgba(74, 144, 217, 0.12)',
+          borderColor: 'rgba(74, 144, 217, 0.7)',
           borderWidth: 2,
           borderDashArray: [8, 6],
         }),
@@ -243,15 +253,20 @@ export class OverlayManager {
     this.onPolygonClick = onClickCb
     this.polygonLayer.on('click', (evt: any) => {
       const id: string = evt.geometry?.id
-      if (id) this.onPolygonClick?.(id)
+      if (!id) return
+      if (id.startsWith('circle-') && this.onCircleClick) {
+        this.onCircleClick(id)
+        return
+      }
+      this.onPolygonClick?.(id)
     })
     // 将插件多边形图层提到最高层级，确保点击事件不会
     // 被页面自身的多边形截获
     this.polygonLayer.setZIndex(9999)
     if (onMousedownCb) {
       this.onPolygonMousedown = onMousedownCb
-      this._attachMousedownHandler()
     }
+    this._attachMousedownHandler()
   }
 
   private _closedPath(points: LatLng[]): any[] {
@@ -947,6 +962,18 @@ export class OverlayManager {
     for (const labels of this.measureLabelMarkers.values()) {
       for (const l of labels) l.setMap(null)
     }
+  }
+
+  /** 获取多边形图层引用（供 CircleTool 等注册直连事件）。 */
+  getPolygonLayer(): any { return this.polygonLayer }
+
+  /** 设置圆形专有点击回调（由 CircleTool 注册）。 */
+  setCircleClickHandler(cb: (id: string) => void): void { this.onCircleClick = cb }
+
+  /** 设置圆形专有 mousedown 回调（由 CircleTool 注册，用于拖拽移动）。 */
+  setCircleMousedownHandler(cb: (id: string, latLng: any) => void): void {
+    this.onCircleMousedown = cb
+    this._attachMousedownHandler()
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────

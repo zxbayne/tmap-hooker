@@ -66,7 +66,7 @@ export class PointMarkerTool implements ITool {
     this.points.delete(id)
     this.pointNames.delete(id)
     if (this.selectedId === id) this.selectedId = null
-    sendToPanel({ type: HookEvent.POINT_MARKER_DELETED, payload: { id } })
+    sendToPanel({ type: HookEvent.LAYER_DELETED, payload: { id } })
     log('PointMarkerTool point deleted:', id)
   }
 
@@ -87,6 +87,8 @@ export class PointMarkerTool implements ITool {
       }
     }
     log('PointMarkerTool point selected:', id)
+    const latlng = this.points.get(id)
+    sendToPanel({ type: HookEvent.LAYER_SELECTED, payload: { id, data: latlng ? { kind: 'point-marker', lat: latlng.lat, lng: latlng.lng } : undefined } })
   }
 
   setVisible(id: string, visible: boolean): void {
@@ -122,6 +124,6 @@ export class PointMarkerTool implements ITool {
     this.ctx.overlays.addPointMarker(id, latlng, name)
     this.points.set(id, latlng)
     this.pointNames.set(id, name)
-    sendToPanel({ type: HookEvent.POINT_MARKER_ADDED, payload: { id, lat: latlng.lat, lng: latlng.lng, name } })
+    sendToPanel({ type: HookEvent.LAYER_DRAWN, payload: { id, kind: 'point-marker', data: { kind: 'point-marker', lat: latlng.lat, lng: latlng.lng } } })
   }
 }

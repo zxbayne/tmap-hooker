@@ -47,55 +47,43 @@
     <!-- 工具结果/操作区 -->
     <ResultPanel
       :active-tool="activeTool"
-      :segments="segments"
-      :total-label="totalLabel"
       :point-count="pointCount"
+      :measure-mode="measureMode"
       :polygon-mode="polygonMode"
       :drawing-point-count="drawingPointCount"
-      :polygon-layers="polygonLayers"
       :editing-polygon-id="editingPolygonId"
-      :point-markers="pointMarkers"
       :circle-mode="circleMode"
       :circle-preview="circlePreview"
       :circle-preview-geometry="circlePreviewGeometry"
       @start-drawing-circle="startDrawingCircle"
       @cancel-drawing-circle="cancelDrawingCircle"
-      @start-edit-circle="(id) => startEditCircle(id)"
-      @commit-edit-circle="commitEditCircle"
-      @cancel-edit-circle="cancelEditCircle"
       @start-drawing="startDrawingPolygon"
       @finish-drawing="finishDrawingPolygon"
       @cancel-drawing="cancelDrawingPolygon"
       @undo-point="undoPolygonPoint"
-      @delete-layer="(id) => deletePolygon(id)"
-      @rename-layer="(id, name) => renamePolygon(id, name)"
-      @toggle-visible="(id) => togglePolygonVisible(id)"
-      @select-layer="(id) => selectPolygonFromPanel(id)"
       @draw-from-text="(input) => drawPolygon(input)"
-      @start-edit="(id) => startEditPolygon(id)"
       @finish-edit="finishEditPolygon"
       @cancel-edit="cancelEditPolygon"
       @update-circle="(id, r, n) => updateCircle(id, r, n)"
       @finish-circle="finishCircle"
-      @delete-point="(id) => deletePointMarker(id)"
-      @rename-point="(id, name) => renamePointMarker(id, name)"
-      @toggle-point-visible="(id) => togglePointMarkerVisible(id)"
-      @select-point="(id, multi) => selectPointMarkerFromPanel(id, multi)"
+      @commit-edit-circle="commitEditCircle"
+      @cancel-edit-circle="cancelEditCircle"
       @import-points="(input) => importPointMarkers(input)"
     />
 
-    <!-- 统一图层列表（跨工具持久显示） -->
+    <!-- 统一图层列表 + 详情 -->
     <LayerList
-      :layers="unifiedLayers"
-      @select-layer="onLayerSelect"
-      @toggle-visible="onLayerToggleVisible"
-      @delete-layer="onLayerDelete"
-      @rename-layer="onLayerRename"
+      :layers="layers"
+      :selected-layer="selectedLayer"
+      @select-layer="(id) => selectLayer(id)"
+      @toggle-visible="(id) => toggleLayerVisible(id)"
+      @delete-layer="(id) => deleteLayer(id)"
+      @rename-layer="(id, name) => renameLayer(id, name)"
       @reorder="reorderLayers"
-      @edit-layer="startEditMeasure"
+      @edit-layer="(id) => editLayer(id)"
     />
 
-    <!-- 操作按钮栏（多边形工具激活时隐藏） -->
+    <!-- 操作按钮栏 -->
     <ActionBar
       :active-tool="activeTool"
       :point-count="pointCount"
@@ -121,121 +109,29 @@ import ResultPanel from './components/ResultPanel.vue'
 import ActionBar from './components/ActionBar.vue'
 import Settings from './components/Settings.vue'
 import LayerList from './components/LayerList.vue'
-import type { UnifiedLayer } from './composables/useTool'
 
 const {
-  isMapReady,
-  mapStatus,
-  activeTool,
-  segments,
-  totalLabel,
-  pointCount,
-  polygonMode,
-  drawingPointCount,
-  polygonLayers,
-  editingPolygonId,
-  pointMarkers,
-  setTool,
-  finish,
-  undo,
-  clear,
-  startDrawingPolygon,
-  finishDrawingPolygon,
-  cancelDrawingPolygon,
-  undoPolygonPoint,
-  drawPolygon,
-  deletePolygon,
-  selectPolygonFromPanel,
-  togglePolygonVisible,
-  renamePolygon,
-  startEditPolygon,
-  finishEditPolygon,
-  cancelEditPolygon,
-  deletePointMarker,
-  selectPointMarkerFromPanel,
-  togglePointMarkerVisible,
-  renamePointMarker,
-  importPointMarkers,
-  updateCircle,
-  finishCircle,
-  startDrawingCircle,
-  cancelDrawingCircle,
-  startEditCircle,
-  commitEditCircle,
-  cancelEditCircle,
-  setDebug,
-  mouseCoords,
-  circleMode,
-  circlePreview,
-  circlePreviewGeometry,
-  unifiedLayers,
-  layerOrder,
-  deleteMeasure,
-  selectMeasure,
-  toggleMeasureVisible,
-  renameMeasure,
-  reorderLayers,
-  startEditMeasure,
-  commitEditMeasure,
-  cancelEditMeasure,
+  isMapReady, mapStatus, activeTool,
+  layers, selectedLayer, layerOrder,
+  selectLayer, deleteLayer, toggleLayerVisible, renameLayer, reorderLayers, editLayer,
+  segments, totalLabel, pointCount,
+  polygonMode, drawingPointCount, editingPolygonId,
+  startDrawingPolygon, finishDrawingPolygon, cancelDrawingPolygon,
+  undoPolygonPoint, drawPolygon, finishEditPolygon, cancelEditPolygon,
+  pointMarkers, importPointMarkers,
+  circleMode, circlePreview, circlePreviewGeometry, measureMode,
+  startDrawingCircle, cancelDrawingCircle, updateCircle, finishCircle,
+  commitEditCircle, cancelEditCircle,
+  commitEditMeasure, cancelEditMeasure,
+  mouseCoords, setTool, finish, undo, clear, setDebug,
 } = useTool()
 
-// ── 统一图层事件分发 ─────────────────────────────────────────────────────────
-
-function findLayer(id: string): UnifiedLayer | undefined {
-  return unifiedLayers.value.find(l => l.id === id)
-}
-
-function onLayerSelect(id: string) {
-  const layer = findLayer(id)
-  if (!layer) return
-  switch (layer.kind) {
-    case 'polygon': selectPolygonFromPanel(id); break
-    case 'measure': selectMeasure(id); break
-    case 'point-marker': selectPointMarkerFromPanel(id); break
-    case 'circle': startEditCircle(id); break
-  }
-}
-
-function onLayerToggleVisible(id: string) {
-  const layer = findLayer(id)
-  if (!layer) return
-  switch (layer.kind) {
-    case 'polygon': togglePolygonVisible(id); break
-    case 'circle': togglePolygonVisible(id); break   // 圆形也是多边形图层
-    case 'measure': toggleMeasureVisible(id); break
-    case 'point-marker': togglePointMarkerVisible(id); break
-  }
-}
-
-function onLayerDelete(id: string) {
-  const layer = findLayer(id)
-  if (!layer) return
-  switch (layer.kind) {
-    case 'polygon': deletePolygon(id); break
-    case 'circle': deletePolygon(id); break   // 圆形也是多边形图层
-    case 'measure': deleteMeasure(id); break
-    case 'point-marker': deletePointMarker(id); break
-  }
-}
-
-function onLayerRename(id: string, name: string) {
-  const layer = findLayer(id)
-  if (!layer) return
-  switch (layer.kind) {
-    case 'polygon': renamePolygon(id, name); break
-    case 'circle': { /* 圆形名称仅 panel 本地维护 */ break }
-    case 'measure': renameMeasure(id, name); break
-    case 'point-marker': renamePointMarker(id, name); break
-  }
-}
-
-// ── 折叠/展开状态 ─────────────────────────────────────────────────────────────
+// ── 折叠/展开 ────────────────────────────────────────────────────────────────
 const COLLAPSE_KEY = '__tmh_collapsed__'
 const MINI_Y_KEY = '__tmh_mini_y__'
 const isCollapsed = ref(localStorage.getItem(COLLAPSE_KEY) === 'true')
 
-// ── 地图状态指示器 ────────────────────────────────────────────────────────────
+// ── 地图状态指示器 ───────────────────────────────────────────────────────────
 const statusClass = computed(() => ({
   ready: mapStatus.value === 'ready',
   lost: mapStatus.value === 'lost',
@@ -261,7 +157,7 @@ function expand() {
   localStorage.setItem(COLLAPSE_KEY, 'false')
 }
 
-// ── Mini-tab 拖动 ────────────────────────────────────────────────────────────
+// ── Mini-tab 拖动 ───────────────────────────────────────────────────────────
 const savedMiniY = localStorage.getItem(MINI_Y_KEY)
 const miniTabY = ref(savedMiniY !== null ? Number(savedMiniY) : Math.max(0, window.innerHeight / 2 - 40))
 let miniDragging = false
@@ -275,21 +171,15 @@ function startMiniDrag(e: MouseEvent) {
 }
 
 function onMiniTabClick() {
-  if (miniHasMoved) {
-    miniHasMoved = false
-    return
-  }
+  if (miniHasMoved) { miniHasMoved = false; return }
   expand()
 }
 
-// ── 设置面板可见性 ─────────────────────────────────────────────────────────────
+// ── 设置 ────────────────────────────────────────────────────────────────────
 const showSettings = ref(false)
+function toggleSettings() { showSettings.value = !showSettings.value }
 
-function toggleSettings() {
-  showSettings.value = !showSettings.value
-}
-
-// ── 面板垂直拖拽（始终贴靠右侧，仅垂直可移动）────────────────────────────────
+// ── 面板拖拽 ────────────────────────────────────────────────────────────────
 const posY = ref(20)
 let dragging = false
 let dragOffsetY = 0
@@ -321,22 +211,17 @@ function onResize() {
   posY.value = Math.max(0, Math.min(window.innerHeight - 100, posY.value))
 }
 
-// ── 主题管理 ──────────────────────────────────────────────────────────────────
+// ── 主题 ────────────────────────────────────────────────────────────────────
 const themePref = ref<'system' | 'light' | 'dark'>('system')
-/** 系统级暗色模式媒体查询，供 "跟随系统" 模式使用。 */
 const systemDark = window.matchMedia('(prefers-color-scheme: dark)')
 
-/** 当前生效的主题（解析 'system' 后的实际值）。 */
-const effectiveTheme = computed<'light' | 'dark'>(() => {
-  if (themePref.value === 'system') return systemDark.matches ? 'dark' : 'light'
-  return themePref.value
-})
+const effectiveTheme = computed<'light' | 'dark'>(() =>
+  themePref.value === 'system' ? (systemDark.matches ? 'dark' : 'light') : themePref.value,
+)
 
-/** 将主题 class 应用到 Shadow 宿主元素（:host 选择器需要类在宿主上）。 */
 function applyTheme() {
   const host = document.getElementById(HOST_ID)
   if (!host) return
-  // 直接读 systemDark.matches，不依赖 computed（computed 缓存了旧值）
   const isDark = themePref.value === 'system'
     ? systemDark.matches
     : themePref.value === 'dark'
@@ -344,7 +229,6 @@ function applyTheme() {
   host.classList.toggle('theme-dark', isDark)
 }
 
-/** 从 chrome.storage 加载主题（首次读 localStorage 做迁移），异步初始化。 */
 async function loadTheme() {
   try {
     const result = await chrome.storage.local.get(THEME_KEY)
@@ -353,7 +237,6 @@ async function loadTheme() {
       themePref.value = stored
     }
   } catch {
-    // chrome.storage 不可用时尝试 localStorage 迁移
     const local = localStorage.getItem(THEME_KEY)
     if (local === 'system' || local === 'light' || local === 'dark') {
       themePref.value = local
@@ -362,12 +245,10 @@ async function loadTheme() {
   applyTheme()
 }
 
-/** 监听系统主题变化（仅 "跟随系统" 模式需要）。 */
 function onSystemThemeChange() {
   if (themePref.value === 'system') applyTheme()
 }
 
-/** 跨上下文同步：popup/panel 任一方改主题，另一方实时跟随。 */
 function onStorageChanged(changes: Record<string, chrome.storage.StorageChange>, area: string) {
   if (area !== 'local') return
   const c = changes[THEME_KEY]

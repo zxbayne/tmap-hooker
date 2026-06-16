@@ -102,6 +102,7 @@ export class MultiPointTool implements ITool {
     this.keydownHandler = (evt: KeyboardEvent) => this.onKeydown(evt)
     document.addEventListener('keydown', this.keydownHandler)
     this.setCrosshair(true)
+    sendToPanel({ type: HookEvent.LAYER_EDIT_STARTED, payload: { id, kind: 'measure' } })
     log('MultiPointTool loadForEdit —', id, points.length, 'points')
   }
 
@@ -191,23 +192,27 @@ export class MultiPointTool implements ITool {
 
       // 创建/更新持久测距图层（新线 + 标记 + 标签）
       this.ctx.overlays.addMeasure(id, [...this.points], segDists, (clickedId: string) => {
-        sendToPanel({ type: HookEvent.MEASURE_SELECTED, payload: { id: clickedId } })
+        sendToPanel({ type: HookEvent.LAYER_SELECTED, payload: { id: clickedId } })
       })
 
       // 清理临时绘制用的覆盖物
       this.ctx.overlays.clearMeasurement()
 
       // 发射测距图层数据到 panel
+      if (isEdit) {
+        sendToPanel({ type: HookEvent.LAYER_EDIT_COMMITTED, payload: { id, kind: 'measure' } })
+      }
       sendToPanel({
-        type: HookEvent.MEASURE_DRAWN,
+        type: HookEvent.LAYER_DRAWN,
         payload: {
           id,
-          name,
-          visible: true,
-          selected: false,
-          paths: [[...this.points]],
-          segmentDistances: segDists,
-          totalDistance: this.totalM,
+          kind: 'measure',
+          data: {
+            kind: 'measure',
+            paths: [[...this.points]],
+            segmentDistances: segDists,
+            totalDistance: this.totalM,
+          },
         },
       })
 
@@ -327,21 +332,23 @@ export class MultiPointTool implements ITool {
       }
       // 重新创建持久图层
       this.ctx.overlays.addMeasure(id, pts, segDists, (clickedId: string) => {
-        sendToPanel({ type: HookEvent.MEASURE_SELECTED, payload: { id: clickedId } })
+        sendToPanel({ type: HookEvent.LAYER_SELECTED, payload: { id: clickedId } })
       })
       // 清理临时绘制
       this.ctx.overlays.clearMeasurement()
       // 通知 panel 恢复
+      sendToPanel({ type: HookEvent.LAYER_EDIT_CANCELLED, payload: { id, kind: 'measure' } })
       sendToPanel({
-        type: HookEvent.MEASURE_DRAWN,
+        type: HookEvent.LAYER_DRAWN,
         payload: {
           id,
-          name: name!,
-          visible: true,
-          selected: false,
-          paths: [[...pts]],
-          segmentDistances: segDists,
-          totalDistance: segDists.reduce((a, b) => a + b, 0),
+          kind: 'measure',
+          data: {
+            kind: 'measure',
+            paths: [[...pts]],
+            segmentDistances: segDists,
+            totalDistance: segDists.reduce((a, b) => a + b, 0),
+          },
         },
       })
       this.editMode = false

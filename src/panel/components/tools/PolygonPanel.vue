@@ -22,135 +22,23 @@
           class="poly-btn draw-btn"
           :disabled="drawingPointCount < 3"
           @click="$emit('finishDrawing')"
-        >
-          ✓ 完成
-        </button>
+        >✓ 完成</button>
         <button
           class="poly-btn undo-poly-btn"
           :disabled="drawingPointCount === 0"
           @click="$emit('undoPoint')"
-        >
-          ↩ 撤销
-        </button>
-        <button class="poly-btn cancel-btn" @click="$emit('cancelDrawing')">
-          ✗ 取消
-        </button>
+        >↩ 撤销</button>
+        <button class="poly-btn cancel-btn" @click="$emit('cancelDrawing')">✗ 取消</button>
       </div>
     </div>
 
-    <!-- 图层列表 -->
-    <div class="poly-layers">
-      <div class="poly-layers-header">
-        <span>图层列表</span>
-        <span class="poly-layer-count">{{ polygonLayers.length }}</span>
+    <!-- 编辑工具栏（编辑模式） -->
+    <div v-if="editingPolygonId" class="poly-edit-controls">
+      <div class="poly-edit-hint">拖拽顶点修改形状</div>
+      <div class="poly-edit-actions">
+        <button class="poly-btn draw-btn" @click="$emit('finishEdit')">✓ 完成编辑</button>
+        <button class="poly-btn cancel-btn" @click="$emit('cancelEdit')">✗ 取消</button>
       </div>
-
-      <div class="poly-layer-list">
-        <div v-if="polygonLayers.length === 0" class="poly-layer-empty">
-          尚无多边形，点击"新建"开始绘制
-        </div>
-
-        <div
-          v-for="layer in polygonLayers"
-          :key="layer.id"
-          class="poly-layer-item"
-          :class="{ selected: layer.selected, 'hidden-layer': !layer.visible }"
-          @click="onSelectLayer(layer.id)"
-        >
-          <!-- 可见性切换 -->
-          <button
-            class="poly-layer-vis"
-            :title="layer.visible ? '隐藏' : '显示'"
-            @click.stop="$emit('toggleVisible', layer.id)"
-          >
-            {{ layer.visible ? '👁' : '🚫' }}
-          </button>
-
-          <!-- 名称（双击进入编辑） -->
-          <input
-            v-if="editingId === layer.id"
-            :ref="setNameInputRef"
-            class="poly-name-input"
-            :value="layer.name"
-            @blur="onNameBlur(layer.id, $event)"
-            @keydown.enter="onNameBlur(layer.id, $event)"
-            @keydown.escape.stop="editingId = null"
-            @click.stop
-          />
-          <span
-            v-else
-            class="poly-layer-name"
-            :title="layer.name + '（双击重命名）'"
-            @dblclick.stop="startEdit(layer.id)"
-          >
-            {{ layer.name }}
-          </span>
-
-          <!-- 编辑/完成/取消按钮（用 span 稳定锚点，避免 v-for 内裸 template 扰乱 ref 生命周期） -->
-          <span class="poly-layer-actions">
-            <template v-if="editingPolygonId === layer.id">
-              <button
-                class="poly-layer-edit-done"
-                title="完成编辑"
-                @click.stop="$emit('finishEdit')"
-              >✓</button>
-              <button
-                class="poly-layer-edit-cancel"
-                title="取消编辑"
-                @click.stop="$emit('cancelEdit')"
-              >✗</button>
-            </template>
-            <template v-else>
-              <button
-                class="poly-layer-edit"
-                title="编辑顶点"
-                :disabled="!!editingPolygonId || polygonMode === 'drawing'"
-                @click.stop="$emit('startEdit', layer.id)"
-              >✏️</button>
-              <button
-                class="poly-layer-del"
-                title="删除"
-                :disabled="!!editingPolygonId"
-                @click.stop="$emit('deleteLayer', layer.id)"
-              >🗑</button>
-            </template>
-          </span>
-        </div>
-      </div>
-    </div>
-
-    <!-- 坐标导出（选中多边形时显示） -->
-    <div v-if="selectedLayer && selectedLayer.coords.length > 0" class="poly-coords-export">
-      <!-- 几何信息：面积 + 周长 -->
-      <div v-if="selectedLayer.area != null" class="poly-geometry-info">
-        <span class="poly-geometry-item">面积 {{ formatArea(selectedLayer.area) }}</span>
-        <span class="poly-geometry-item">周长 {{ formatDistance(selectedLayer.perimeter!) }}</span>
-      </div>
-      <div class="poly-coords-header">
-        <span>坐标导出</span>
-        <div class="poly-coords-fmt-bar">
-          <button
-            class="poly-coords-fmt-btn"
-            :class="{ active: coordsFmt === 'array' }"
-            @click="coordsFmt = 'array'"
-          >二维数组</button>
-          <button
-            class="poly-coords-fmt-btn"
-            :class="{ active: coordsFmt === 'semicolon' }"
-            @click="coordsFmt = 'semicolon'"
-          >分号格式</button>
-        </div>
-      </div>
-      <textarea
-        class="poly-coords-textarea"
-        readonly
-        :value="formattedCoords"
-        rows="3"
-        spellcheck="false"
-      />
-      <button class="poly-btn draw-btn poly-coords-copy-btn" @click="copyCoords">
-        {{ copied ? '已复制 ✓' : '复制' }}
-      </button>
     </div>
 
     <!-- 坐标导入（折叠） -->
@@ -169,20 +57,8 @@
           spellcheck="false"
         />
         <div class="polygon-actions">
-          <button
-            class="poly-btn draw-btn"
-            :disabled="!localCoords.trim()"
-            @click="onDrawFromText"
-          >
-            绘制
-          </button>
-          <button
-            class="poly-btn clear-btn"
-            :disabled="!localCoords.trim()"
-            @click="localCoords = ''"
-          >
-            清空
-          </button>
+          <button class="poly-btn draw-btn" :disabled="!localCoords.trim()" @click="onDrawFromText">绘制</button>
+          <button class="poly-btn clear-btn" :disabled="!localCoords.trim()" @click="localCoords = ''">清空</button>
         </div>
       </div>
     </div>
@@ -190,14 +66,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick } from 'vue'
-import type { PolygonLayer } from '../../composables/useTool'
-import { formatDistance, formatArea } from '../../../shared/utils/distance'
+import { ref } from 'vue'
 
-const props = defineProps<{
+defineProps<{
   polygonMode: 'idle' | 'drawing'
   drawingPointCount: number
-  polygonLayers: PolygonLayer[]
   editingPolygonId: string | null
 }>()
 
@@ -206,68 +79,13 @@ const emit = defineEmits<{
   finishDrawing: []
   cancelDrawing: []
   undoPoint: []
-  deleteLayer: [id: string]
-  renameLayer: [id: string, name: string]
-  toggleVisible: [id: string]
-  selectLayer: [id: string]
   drawFromText: [input: string]
-  startEdit: [id: string]
   finishEdit: []
   cancelEdit: []
 }>()
 
 const coordsExpanded = ref(false)
 const localCoords = ref('')
-const editingId = ref<string | null>(null)
-const nameInputRef = ref<HTMLInputElement | null>(null)
-// 稳定的 ref 回调：不在模板内写内联箭头函数，避免每次渲染创建新闭包导致 Vue ref 生命周期混乱
-const setNameInputRef = (el: HTMLInputElement | null) => { nameInputRef.value = el }
-
-// 坐标导出
-const coordsFmt = ref<'array' | 'semicolon'>('array')
-const copied = ref(false)
-
-const selectedLayer = computed(() => props.polygonLayers.find((l) => l.selected) ?? null)
-
-const formattedCoords = computed(() => {
-  const coords = selectedLayer.value?.coords ?? []
-  if (coords.length === 0) return ''
-  if (coordsFmt.value === 'array') {
-    return JSON.stringify(coords.map((c) => [c.lng, c.lat]))
-  }
-  return coords.map((c) => `${c.lng},${c.lat}`).join(';')
-})
-
-async function copyCoords() {
-  if (!formattedCoords.value) return
-  try {
-    await navigator.clipboard.writeText(formattedCoords.value)
-    copied.value = true
-    setTimeout(() => { copied.value = false }, 2000)
-  } catch {
-    // clipboard not available
-  }
-}
-
-
-function onSelectLayer(id: string) {
-  if (editingId.value !== null) return
-  emit('selectLayer', id)
-}
-
-function startEdit(id: string) {
-  editingId.value = id
-  nextTick(() => {
-    nameInputRef.value?.select()
-  })
-}
-
-function onNameBlur(id: string, evt: Event) {
-  const input = evt.target as HTMLInputElement
-  const name = input.value.trim()
-  if (name) emit('renameLayer', id, name)
-  editingId.value = null
-}
 
 function onDrawFromText() {
   const text = localCoords.value.trim()
@@ -275,5 +93,4 @@ function onDrawFromText() {
   emit('drawFromText', text)
   localCoords.value = ''
 }
-
 </script>

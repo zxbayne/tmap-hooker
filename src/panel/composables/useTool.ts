@@ -1,9 +1,15 @@
 import { ref, computed } from 'vue'
 import { HookEvent, PanelCmd } from '@shared/protocol'
-import type { HookMessage, SegmentAddedPayload, MeasureDrawnPayload, CircleDrawnPayload, LayerKind } from '@shared/protocol'
+import type {
+  HookMessage, SegmentAddedPayload,
+  CircleDrawnPayload, GenericLayer, LayerKind, LayerData,
+  LayerDrawnPayload, LayerSelectedPayload, LayerEditEventPayload,
+  MeasureLayerData,
+} from '@shared/protocol'
 import { useMapBridge } from './useMapBridge'
 import { formatDistance } from '@shared/utils/distance'
 import { TOOL_IDS } from '@shared/tool-config'
+import type { LatLng } from '@shared/utils/parse-coords'
 
 export interface SegmentInfo {
   from: number
@@ -12,50 +18,7 @@ export interface SegmentInfo {
   label: string
 }
 
-/** 已提交的多边形图层信息，在 Panel 层维护名称、可见性、选中状态和顶点坐标（供坐标导出）。 */
-export interface PolygonLayer {
-  id: string
-  name: string
-  visible: boolean
-  selected: boolean
-  coords: Array<{ lat: number; lng: number }>
-  /** 面积（平方米），hook 层计算后回传。仅选中/新建/编辑后更新。 */
-  area: number | null
-  /** 周长（米），hook 层计算后回传。 */
-  perimeter: number | null
-}
-
-/** 打点标记条目，Panel 层维护名称、可见性、选中状态和坐标。 */
-export interface PointMarkerItem {
-  id: string
-  name: string
-  visible: boolean
-  selected: boolean
-  lat: number
-  lng: number
-}
-
-/** 统一图层条目（用于 LayerList 渲染）。 */
-export interface UnifiedLayer {
-  id: string
-  kind: LayerKind
-  name: string
-  visible: boolean
-  selected: boolean
-}
-
-/** 圆形图层数据模型（Panel 端维护）。 */
-export interface CircleLayer {
-  id: string
-  name: string
-  visible: boolean
-  selected: boolean
-  center: { lat: number; lng: number }
-  radius: number
-  nPoints: number
-  area: number | null
-  perimeter: number | null
-}
+export { type GenericLayer, type LayerKind, type LayerData } from '@shared/protocol'
 
 export function useTool() {
   const { onHookEvent, sendCmd } = useMapBridge()
@@ -67,68 +30,15 @@ export function useTool() {
   const totalM = ref(0)
   const pointCount = ref(0)
 
-  // 多边形工具相关状态
-  const polygonMode = ref<'idle' | 'drawing'>('idle')
-  const drawingPointCount = ref(0)
-  /** 当前绘制中各顶点坐标文本，供坐标导入折叠区同步显示。 */
-  const drawingCoordsText = ref('')
-  const polygonLayers = ref<PolygonLayer[]>([])
-  const editingPolygonId = ref<string | null>(null)
-  let polygonNameCounter = 0
-
-  // 打点标记工具相关状态
-  const pointMarkers = ref<PointMarkerItem[]>([])
-  let pointNameCounter = 0
-
-  // 鼠标坐标实时显示
-  const mouseCoords = ref<{ lat: number; lng: number } | null>(null)
-
-  // 圆形工具状态
-  const circleMode = ref<'idle' | 'drawing' | 'placed' | 'editing'>('idle')
-  const circlePreview = ref<{ id: string; lat: number; lng: number; radius: number; nPoints: number } | null>(null)
-  const circlePreviewGeometry = ref<{ area: number; perimeter: number } | null>(null)
-
-  // 测距图层状态
-  const measureLayers = ref<MeasureDrawnPayload[]>([])
-  /** 图层顺序：按 id 排列，新图层追加到末尾，拖拽后可重新排列。 */
+  // ── 统一图层存储（唯一数据源） ────────────────────────────────────────────
+  const layers = ref<GenericLayer[]>([])
   const layerOrder = ref<string[]>([])
+  const nameCounters: Record<string, number> = { polygon: 0, circle: 0, measure: 0, 'point-marker': 0 }
 
-  // 圆形图层状态
-  const circleLayers = ref<CircleLayer[]>([])
-  let circleNameCounter = 0
-
-  /** 统一图层列表（多来源聚合，按 layerOrder 排序）。 */
-  const unifiedLayers = computed<UnifiedLayer[]>(() => {
-    const layers: UnifiedLayer[] = []
-
-    for (const p of polygonLayers.value) {
-      layers.push({ id: p.id, kind: 'polygon', name: p.name, visible: p.visible, selected: p.selected })
-    }
-    for (const c of circleLayers.value) {
-      layers.push({ id: c.id, kind: 'circle', name: c.name, visible: c.visible, selected: c.selected })
-    }
-    for (const m of measureLayers.value) {
-      layers.push({ id: m.id, kind: 'measure', name: m.name, visible: m.visible, selected: m.selected })
-    }
-    for (const pm of pointMarkers.value) {
-      layers.push({ id: pm.id, kind: 'point-marker', name: pm.name, visible: pm.visible, selected: pm.selected })
-    }
-    // 绘制中/编辑中的圆形预览：仅当未提交时临时显示
-    if (circlePreview.value && (circleMode.value === 'placed' || circleMode.value === 'editing')) {
-      if (!circleLayers.value.some(c => c.id === circlePreview.value!.id)) {
-        layers.push({
-          id: circlePreview.value.id,
-          kind: 'circle',
-          name: `圆形 ${circlePreview.value.id.slice(-4)}`,
-          visible: true,
-          selected: circleMode.value === 'editing',
-        })
-      }
-    }
-
-    // 按 layerOrder 排序：order 中有序号的优先，未在 order 中的追加到末尾
+  // 按 layerOrder 排序后的图层列表
+  const sortedLayers = computed<GenericLayer[]>(() => {
     const orderMap = new Map(layerOrder.value.map((id, i) => [id, i]))
-    layers.sort((a, b) => {
+    return [...layers.value].sort((a, b) => {
       const ai = orderMap.get(a.id)
       const bi = orderMap.get(b.id)
       if (ai !== undefined && bi !== undefined) return ai - bi
@@ -136,11 +46,145 @@ export function useTool() {
       if (bi !== undefined) return 1
       return 0
     })
-    return layers
   })
 
+  /** 获取当前选中的图层（同时只能选中一个）。 */
+  const selectedLayer = computed<GenericLayer | null>(() =>
+    layers.value.find(l => l.selected) ?? null,
+  )
+
+  // ── 工具绘制状态（保留，仅用于创建过程） ──────────────────────────────────
+
+  const polygonMode = ref<'idle' | 'drawing'>('idle')
+  const drawingPointCount = ref(0)
+  const drawingCoordsText = ref('')
+  const editingPolygonId = ref<string | null>(null)
+
+  const pointMarkers = ref<Array<{ id: string; name: string; lat: number; lng: number }>>([])
+
+  const mouseCoords = ref<{ lat: number; lng: number } | null>(null)
+
+  const circleMode = ref<'idle' | 'drawing' | 'placed' | 'editing'>('idle')
+  const circlePreview = ref<{ id: string; lat: number; lng: number; radius: number; nPoints: number } | null>(null)
+  const circlePreviewGeometry = ref<{ area: number; perimeter: number } | null>(null)
+
+  const measureMode = ref<'idle' | 'drawing' | 'editing'>('idle')
+
+  // ── 工具专有状态（非图层管理，保留） ──────────────────────────────────────
+  // pointMarkers 保留内部数组，用于 PointPanel 的已有数据回显和批量导入
+  // 但图层管理走 layers，不重复维护 selected/visible
+
   const totalLabel = computed(() => (totalM.value > 0 ? formatDistance(totalM.value) : ''))
-  const isMeasuring = computed(() => activeTool.value !== '')
+
+  // ── 图层辅助函数 ───────────────────────────────────────────────────────────
+
+  /** 自动命名 */
+  function nextName(kind: string): string {
+    nameCounters[kind] = (nameCounters[kind] || 0) + 1
+    const labels: Record<string, string> = {
+      polygon: '多边形', circle: '圆形', measure: '测距', 'point-marker': '点位',
+    }
+    return `${labels[kind] ?? kind} ${nameCounters[kind]}`
+  }
+
+  /** 统一选中图层（取消所有其他选中，通知 hook）。 */
+  function selectLayer(id: string) {
+    const target = layers.value.find(l => l.id === id)
+    if (!target) return
+
+    // 取消所有选中
+    for (const l of layers.value) {
+      if (l.id !== id) l.selected = false
+    }
+    target.selected = true
+    sendCmd({ type: PanelCmd.LAYER_SELECT, payload: { id: target.id, kind: target.kind } })
+  }
+
+  /** 统一删除图层。 */
+  function deleteLayer(id: string) {
+    const idx = layers.value.findIndex(l => l.id === id)
+    if (idx === -1) return
+    const layer = layers.value[idx]
+    layers.value.splice(idx, 1)
+    layerOrder.value = layerOrder.value.filter(oid => oid !== id)
+    sendCmd({ type: PanelCmd.LAYER_DELETE, payload: { id: layer.id, kind: layer.kind } })
+    // 同步清理 pointMarkers 内部数组
+    if (layer.kind === 'point-marker') {
+      const pidx = pointMarkers.value.findIndex(p => p.id === id)
+      if (pidx !== -1) pointMarkers.value.splice(pidx, 1)
+    }
+  }
+
+  /** 统一切换可见性。 */
+  function toggleLayerVisible(id: string) {
+    const layer = layers.value.find(l => l.id === id)
+    if (!layer) return
+    layer.visible = !layer.visible
+    sendCmd({ type: PanelCmd.LAYER_TOGGLE, payload: { id, kind: layer.kind, visible: layer.visible } })
+  }
+
+  /** 统一重命名。 */
+  function renameLayer(id: string, name: string) {
+    const layer = layers.value.find(l => l.id === id)
+    if (!layer) return
+    layer.name = name
+    sendCmd({ type: PanelCmd.LAYER_RENAME, payload: { id, kind: layer.kind, name } })
+    // 同步更新 pointMarkers 内部数组
+    if (layer.kind === 'point-marker') {
+      const pm = pointMarkers.value.find(p => p.id === id)
+      if (pm) pm.name = name
+    }
+  }
+
+  /** 拖拽排序。 */
+  function reorderLayers(newOrder: string[]) {
+    layerOrder.value = newOrder
+  }
+
+  /** 开始编辑图层（通过 LAYER_EDIT 通知 hook）。 */
+  function editLayer(id: string) {
+    const layer = layers.value.find(l => l.id === id)
+    if (!layer) return
+    // 切换工具前清理其他工具的瞬态状态，与 setTool() 保持一致
+    if (layer.kind === 'polygon') {
+      activeTool.value = TOOL_IDS.POLYGON
+      circleMode.value = 'idle'
+      circlePreview.value = null
+      circlePreviewGeometry.value = null
+      measureMode.value = 'idle'
+    } else if (layer.kind === 'circle') {
+      activeTool.value = TOOL_IDS.CIRCLE
+      polygonMode.value = 'idle'
+      drawingPointCount.value = 0
+      drawingCoordsText.value = ''
+      measureMode.value = 'idle'
+    }
+    if (layer.kind === 'measure') {
+      const data = layer.data as MeasureLayerData | undefined
+      if (!data || data.paths.length === 0) return
+      activeTool.value = TOOL_IDS.MULTI_POINT
+      polygonMode.value = 'idle'
+      drawingPointCount.value = 0
+      drawingCoordsText.value = ''
+      circleMode.value = 'idle'
+      circlePreview.value = null
+      circlePreviewGeometry.value = null
+      measureMode.value = 'editing'
+      // 深拷贝数组避免 postMessage 对 Vue reactive Proxy 序列化报错
+      sendCmd({
+        type: PanelCmd.LAYER_EDIT,
+        payload: {
+          id, kind: 'measure', name: layer.name,
+          points: JSON.parse(JSON.stringify(data.paths[0])),
+          segmentDistances: JSON.parse(JSON.stringify(data.segmentDistances)),
+        },
+      })
+    } else {
+      sendCmd({ type: PanelCmd.LAYER_EDIT, payload: { id, kind: layer.kind, name: layer.name } })
+    }
+  }
+
+  // ── Hook 事件处理 ──────────────────────────────────────────────────────────
 
   onHookEvent((msg: HookMessage) => {
     switch (msg.type) {
@@ -157,7 +201,6 @@ export function useTool() {
       case HookEvent.MAP_RESTORED:
         isMapReady.value = true
         mapStatus.value = 'restored'
-        // 2 秒后恢复为 ready 状态
         setTimeout(() => { if (mapStatus.value === 'restored') mapStatus.value = 'ready' }, 2000)
         break
 
@@ -168,10 +211,8 @@ export function useTool() {
       case HookEvent.SEGMENT_ADDED: {
         const p = msg.payload as SegmentAddedPayload
         segments.value.push({
-          from: p.fromIdx + 1,
-          to: p.toIdx + 1,
-          distanceM: p.distanceM,
-          label: formatDistance(p.distanceM),
+          from: p.fromIdx + 1, to: p.toIdx + 1,
+          distanceM: p.distanceM, label: formatDistance(p.distanceM),
         })
         totalM.value = p.totalM
         break
@@ -180,17 +221,14 @@ export function useTool() {
       case HookEvent.POINT_REMOVED:
         pointCount.value = msg.payload.newCount
         if (segments.value.length > 0) {
-          const removed = segments.value.pop()!
-          totalM.value -= removed.distanceM
+          totalM.value -= segments.value.pop()!.distanceM
         }
         break
 
       case HookEvent.POLYGON_MODE_CHANGED:
         polygonMode.value = msg.payload.mode
         drawingPointCount.value = msg.payload.drawingPointCount
-        if (msg.payload.mode === 'idle') {
-          drawingCoordsText.value = ''
-        }
+        if (msg.payload.mode === 'idle') drawingCoordsText.value = ''
         break
 
       case HookEvent.POLYGON_POINT_ADDED:
@@ -203,166 +241,139 @@ export function useTool() {
         drawingCoordsText.value = msg.payload.coordsText
         break
 
-      case HookEvent.POLYGON_DRAWN:
-        polygonLayers.value.push({
-          id: msg.payload.id,
-          name: `多边形 ${++polygonNameCounter}`,
-          visible: true,
-          selected: false,
-          coords: [],
-          area: null,
-          perimeter: null,
-        })
-        layerOrder.value.push(msg.payload.id)
-        break
-
-      case HookEvent.POLYGON_SELECTED: {
-        const prev = polygonLayers.value.find((l) => l.selected)
-        if (prev) { prev.selected = false }
-        const next = polygonLayers.value.find((l) => l.id === msg.payload.id)
-        if (next) { next.selected = true; next.coords = msg.payload.coords }
-        break
-      }
-
-      case HookEvent.POLYGON_DELETED: {
-        const idx = polygonLayers.value.findIndex((l) => l.id === msg.payload.id)
-        if (idx !== -1) polygonLayers.value.splice(idx, 1)
-        layerOrder.value = layerOrder.value.filter(id => id !== msg.payload.id)
-        break
-      }
-
-      case HookEvent.POLYGON_EDIT_STARTED:
-        editingPolygonId.value = msg.payload.id
-        break
-
-      case HookEvent.POLYGON_EDIT_FINISHED: {
-        editingPolygonId.value = null
-        const edited = polygonLayers.value.find((l) => l.id === msg.payload.id)
-        if (edited) edited.coords = msg.payload.coords
-        break
-      }
-
-      case HookEvent.POLYGON_EDIT_CANCELLED:
-        editingPolygonId.value = null
-        break
-
       case HookEvent.POLYGON_GEOMETRY: {
-        const layer = polygonLayers.value.find((l) => l.id === msg.payload.id)
-        if (layer) {
-          layer.area = msg.payload.area
-          layer.perimeter = msg.payload.perimeter
+        const layer = layers.value.find(l => l.id === msg.payload.id)
+        if (layer?.data && layer.data.kind === 'polygon') {
+          layer.data.area = msg.payload.area
+          layer.data.perimeter = msg.payload.perimeter
         }
         break
       }
 
-      case HookEvent.POINT_MARKER_ADDED:
-        pointMarkers.value.push({
+      case HookEvent.CIRCLE_CENTER_SET:
+        circleMode.value = 'drawing'
+        circlePreview.value = {
           id: msg.payload.id,
-          name: msg.payload.name,
-          visible: true,
-          selected: false,
-          lat: msg.payload.lat,
-          lng: msg.payload.lng,
-        })
-        pointNameCounter++
-        layerOrder.value.push(msg.payload.id)
+          lat: msg.payload.lat, lng: msg.payload.lng,
+          radius: msg.payload.radius, nPoints: msg.payload.nPoints,
+        }
+        circlePreviewGeometry.value = null
         break
 
-      case HookEvent.POINT_MARKER_DELETED: {
-        const idx = pointMarkers.value.findIndex((p) => p.id === msg.payload.id)
-        if (idx !== -1) pointMarkers.value.splice(idx, 1)
-        layerOrder.value = layerOrder.value.filter(id => id !== msg.payload.id)
+      case HookEvent.CIRCLE_UPDATED: {
+        const p = msg.payload as CircleUpdatedPayload & { lat?: number; lng?: number }
+        // 兼容 preview 尚未被 CIRCLE_CENTER_SET 初始化的情况
+        if (!circlePreview.value || circlePreview.value.id !== p.id) {
+          if (p.lat !== undefined && p.lng !== undefined) {
+            circleMode.value = 'placed'
+            circlePreview.value = { id: p.id, lat: p.lat, lng: p.lng, radius: p.radius, nPoints: p.nPoints }
+            circlePreviewGeometry.value = { area: p.area, perimeter: p.perimeter }
+          }
+          break
+        }
+        if (circleMode.value === 'drawing') circleMode.value = 'placed'
+        circlePreview.value.radius = p.radius
+        circlePreview.value.nPoints = p.nPoints
+        // placed-mode 圆心拖拽时同步更新坐标（避免 UI 显示的圆心和地图上的不一致）
+        if (p.lat !== undefined && p.lng !== undefined) {
+          circlePreview.value.lat = p.lat
+          circlePreview.value.lng = p.lng
+        }
+        circlePreviewGeometry.value = { area: p.area, perimeter: p.perimeter }
+        break
+      }
+
+      // ── 统一图层事件 ──
+
+      case HookEvent.LAYER_DRAWN: {
+        const p = msg.payload as LayerDrawnPayload
+        const existing = layers.value.find(l => l.id === p.id)
+        if (existing) {
+          // 编辑提交：更新 data
+          existing.data = p.data
+        } else {
+          layers.value.push({
+            id: p.id,
+            kind: p.kind,
+            name: nextName(p.kind),
+            visible: true,
+            selected: false,
+            data: p.data,
+          })
+          layerOrder.value.push(p.id)
+        }
+        // 圆形绘制完成后清除预览
+        if (p.kind === 'circle') {
+          circleMode.value = 'idle'
+          circlePreview.value = null
+          circlePreviewGeometry.value = null
+        }
+        // 打点：同步到 pointMarkers 内部数组
+        if (p.kind === 'point-marker' && p.data.kind === 'point-marker') {
+          pointMarkers.value.push({
+            id: p.id,
+            name: layers.value[layers.value.length - 1].name,
+            lat: p.data.lat,
+            lng: p.data.lng,
+          })
+        }
+        break
+      }
+
+      case HookEvent.LAYER_SELECTED: {
+        const p = msg.payload as LayerSelectedPayload
+        // 取消所有选中
+        for (const l of layers.value) l.selected = false
+        if (p.id && p.data) {
+          const layer = layers.value.find(l => l.id === p.id)
+          if (layer) {
+            layer.selected = true
+            layer.data = p.data
+          }
+        }
+        break
+      }
+
+      case HookEvent.LAYER_DELETED: {
+        const p = msg.payload
+        const idx = layers.value.findIndex(l => l.id === p.id)
+        if (idx !== -1) layers.value.splice(idx, 1)
+        layerOrder.value = layerOrder.value.filter(id => id !== p.id)
+        break
+      }
+
+      case HookEvent.LAYER_EDIT_STARTED: {
+        const p = msg.payload as LayerEditEventPayload
+        if (p.kind === 'polygon') { editingPolygonId.value = p.id; activeTool.value = TOOL_IDS.POLYGON }
+        if (p.kind === 'circle') { circleMode.value = 'editing'; activeTool.value = TOOL_IDS.CIRCLE }
+        if (p.kind === 'measure') { measureMode.value = 'editing'; activeTool.value = TOOL_IDS.MULTI_POINT }
+        break
+      }
+
+      case HookEvent.LAYER_EDIT_COMMITTED:
+      case HookEvent.LAYER_EDIT_CANCELLED: {
+        const p = msg.payload as LayerEditEventPayload
+        if (p.kind === 'polygon') { editingPolygonId.value = null; activeTool.value = '' }
+        if (p.kind === 'circle') {
+          circleMode.value = 'idle'
+          circlePreview.value = null
+          circlePreviewGeometry.value = null
+          activeTool.value = ''
+        }
+        if (p.kind === 'measure') {
+          measureMode.value = 'idle'
+          activeTool.value = ''
+        }
         break
       }
 
       case HookEvent.MOUSE_MOVE:
         mouseCoords.value = { lat: msg.payload.lat, lng: msg.payload.lng }
         break
-
-      case HookEvent.CIRCLE_CENTER_SET:
-        circleMode.value = 'drawing'
-        circlePreview.value = {
-          id: msg.payload.id,
-          lat: msg.payload.lat,
-          lng: msg.payload.lng,
-          radius: msg.payload.radius,
-          nPoints: msg.payload.nPoints,
-        }
-        circlePreviewGeometry.value = null
-        break
-
-      case HookEvent.CIRCLE_UPDATED:
-        if (circlePreview.value && circlePreview.value.id === msg.payload.id) {
-          if (circleMode.value === 'drawing') circleMode.value = 'placed'
-          circlePreview.value.radius = msg.payload.radius
-          circlePreview.value.nPoints = msg.payload.nPoints
-          circlePreviewGeometry.value = {
-            area: msg.payload.area,
-            perimeter: msg.payload.perimeter,
-          }
-        }
-        break
-
-      case HookEvent.CIRCLE_EDIT_STARTED:
-        circleMode.value = 'editing'
-        break
-
-      case HookEvent.CIRCLE_EDIT_COMMITTED:
-      case HookEvent.CIRCLE_EDIT_CANCELLED:
-        circleMode.value = 'idle'
-        circlePreview.value = null
-        circlePreviewGeometry.value = null
-        break
-
-      case HookEvent.CIRCLE_DRAWN: {
-        const p = msg.payload as CircleDrawnPayload
-        const existing = circleLayers.value.find(c => c.id === p.id)
-        if (existing) {
-          // 编辑提交：更新已有数据
-          existing.center = p.center
-          existing.radius = p.radius
-          existing.nPoints = p.nPoints
-          existing.area = p.area
-          existing.perimeter = p.perimeter
-        } else {
-          // 新建圆形
-          circleLayers.value.push({
-            id: p.id,
-            name: `圆形 ${++circleNameCounter}`,
-            visible: true,
-            selected: false,
-            center: p.center,
-            radius: p.radius,
-            nPoints: p.nPoints,
-            area: p.area,
-            perimeter: p.perimeter,
-          })
-          layerOrder.value.push(p.id)
-        }
-        break
-      }
-
-      case HookEvent.MEASURE_DRAWN: {
-        const payload = msg.payload as MeasureDrawnPayload
-        measureLayers.value.push({ ...payload })
-        // 追加到图层顺序末尾
-        layerOrder.value.push(payload.id)
-        break
-      }
-
-      case HookEvent.MEASURE_SELECTED: {
-        const selId = msg.payload.id
-        for (const m of measureLayers.value) m.selected = m.id === selId
-        break
-      }
-
-      case HookEvent.MEASURE_EDIT_STARTED:
-      case HookEvent.MEASURE_EDIT_COMMITTED:
-      case HookEvent.MEASURE_EDIT_CANCELLED:
-        // 编辑状态暂由 hook 层管理，panel 只做记录
-        break
     }
   })
+
+  // ── 工具切换 ───────────────────────────────────────────────────────────────
 
   function setTool(toolId: string) {
     const next = activeTool.value === toolId ? '' : toolId
@@ -380,11 +391,17 @@ export function useTool() {
       drawingPointCount.value = 0
       drawingCoordsText.value = ''
     }
+    if (next === TOOL_IDS.MULTI_POINT) {
+      measureMode.value = 'drawing'
+    } else {
+      measureMode.value = 'idle'
+    }
     sendCmd({ type: PanelCmd.SET_TOOL, payload: { toolId: next } })
   }
 
   function finish() {
     activeTool.value = ''
+    measureMode.value = 'idle'
     sendCmd({ type: PanelCmd.FINISH })
   }
 
@@ -400,280 +417,82 @@ export function useTool() {
     polygonMode.value = 'idle'
     drawingPointCount.value = 0
     drawingCoordsText.value = ''
-    polygonLayers.value = []
-    polygonNameCounter = 0
-    pointMarkers.value = []
-    pointNameCounter = 0
     circlePreview.value = null
     circlePreviewGeometry.value = null
-    measureLayers.value = []
-    circleLayers.value = []
-    circleNameCounter = 0
+    circleMode.value = 'idle'
+    measureMode.value = 'idle'
+    layers.value = []
+    pointMarkers.value = []
+    for (const k of Object.keys(nameCounters)) nameCounters[k] = 0
     layerOrder.value = []
     sendCmd({ type: PanelCmd.CLEAR })
   }
 
-  // ── Polygon commands ──────────────────────────────────────────────────────
+  // ── 多边形工具命令 ────────────────────────────────────────────────────────
 
-  function startDrawingPolygon() {
-    sendCmd({ type: PanelCmd.START_DRAWING_POLYGON })
-  }
+  function startDrawingPolygon() { sendCmd({ type: PanelCmd.START_DRAWING_POLYGON }) }
+  function finishDrawingPolygon() { sendCmd({ type: PanelCmd.FINISH_DRAWING_POLYGON }) }
+  function cancelDrawingPolygon() { sendCmd({ type: PanelCmd.CANCEL_DRAWING_POLYGON }) }
+  function undoPolygonPoint() { sendCmd({ type: PanelCmd.UNDO_POLYGON_POINT }) }
+  function drawPolygon(input: string) { sendCmd({ type: PanelCmd.DRAW_POLYGON, payload: { input } }) }
+  function finishEditPolygon() { sendCmd({ type: PanelCmd.FINISH_EDIT_POLYGON }) }
+  function cancelEditPolygon() { sendCmd({ type: PanelCmd.CANCEL_EDIT_POLYGON }) }
 
-  function finishDrawingPolygon() {
-    sendCmd({ type: PanelCmd.FINISH_DRAWING_POLYGON })
-  }
-
-  function cancelDrawingPolygon() {
-    sendCmd({ type: PanelCmd.CANCEL_DRAWING_POLYGON })
-  }
-
-  function undoPolygonPoint() {
-    sendCmd({ type: PanelCmd.UNDO_POLYGON_POINT })
-  }
-
-  function drawPolygon(input: string) {
-    sendCmd({ type: PanelCmd.DRAW_POLYGON, payload: { input } })
-  }
-
-  function deletePolygon(id: string) {
-    sendCmd({ type: PanelCmd.DELETE_POLYGON, payload: { id } })
-  }
-
-  /** 图层列表行点击：本地立即标记选中，同时通知 hook 触发地图高亮。 */
-  function selectPolygonFromPanel(id: string) {
-    const prev = polygonLayers.value.find((l) => l.selected)
-    if (prev) prev.selected = false
-    const next = polygonLayers.value.find((l) => l.id === id)
-    if (next) next.selected = true
-    sendCmd({ type: PanelCmd.SELECT_POLYGON, payload: { id } })
-  }
-
-  /** 切换可见性：本地更新 + 通知 hook 切换地图样式。 */
-  function togglePolygonVisible(id: string) {
-    const layer = polygonLayers.value.find((l) => l.id === id)
-    if (!layer) return
-    layer.visible = !layer.visible
-    sendCmd({ type: PanelCmd.TOGGLE_POLYGON_VISIBLE, payload: { id, visible: layer.visible } })
-  }
-
-  /** 重命名多边形（仅 Panel 本地操作，不发送到 hook）。 */
-  function renamePolygon(id: string, name: string) {
-    const layer = polygonLayers.value.find((l) => l.id === id)
-    if (layer) layer.name = name
-  }
-
-  function startEditPolygon(id: string) {
-    sendCmd({ type: PanelCmd.START_EDIT_POLYGON, payload: { id } })
-  }
-
-  function finishEditPolygon() {
-    sendCmd({ type: PanelCmd.FINISH_EDIT_POLYGON })
-  }
-
-  function cancelEditPolygon() {
-    sendCmd({ type: PanelCmd.CANCEL_EDIT_POLYGON })
-  }
-
-  // ── Point marker commands ──────────────────────────────────────────────────
-
-  function deletePointMarker(id: string) {
-    sendCmd({ type: PanelCmd.DELETE_POINT_MARKER, payload: { id } })
-  }
-
-  function selectPointMarkerFromPanel(id: string, multiSelect = false) {
-    if (multiSelect) {
-      // Toggle this item while keeping others
-      const marker = pointMarkers.value.find((p) => p.id === id)
-      if (marker) marker.selected = !marker.selected
-    } else {
-      // Single select: clear all, then select only this one
-      pointMarkers.value.forEach((p) => { p.selected = false })
-      const marker = pointMarkers.value.find((p) => p.id === id)
-      if (marker) marker.selected = true
-      sendCmd({ type: PanelCmd.SELECT_POINT_MARKER, payload: { id } })
-    }
-  }
-
-  function togglePointMarkerVisible(id: string) {
-    const marker = pointMarkers.value.find((p) => p.id === id)
-    if (!marker) return
-    marker.visible = !marker.visible
-    sendCmd({ type: PanelCmd.TOGGLE_POINT_MARKER_VISIBLE, payload: { id, visible: marker.visible } })
-  }
-
-  function renamePointMarker(id: string, name: string) {
-    const marker = pointMarkers.value.find((p) => p.id === id)
-    if (marker) marker.name = name
-    sendCmd({ type: PanelCmd.RENAME_POINT_MARKER, payload: { id, name } })
-  }
+  // ── 打点标记命令 ──────────────────────────────────────────────────────────
 
   function importPointMarkers(input: string) {
     sendCmd({ type: PanelCmd.IMPORT_POINT_MARKERS, payload: { input } })
   }
 
-  // ── Circle commands ────────────────────────────────────────────────────────
+  // ── 圆形工具命令 ──────────────────────────────────────────────────────────
 
-  function startDrawingCircle() {
-    sendCmd({ type: PanelCmd.START_DRAWING_CIRCLE })
-  }
-
+  function startDrawingCircle() { sendCmd({ type: PanelCmd.START_DRAWING_CIRCLE }) }
   function cancelDrawingCircle() {
     circleMode.value = 'idle'
     circlePreview.value = null
     circlePreviewGeometry.value = null
     sendCmd({ type: PanelCmd.CANCEL_DRAWING_CIRCLE })
   }
-
   function updateCircle(id: string, radius: number, nPoints: number) {
     sendCmd({ type: PanelCmd.UPDATE_CIRCLE, payload: { id, radius, nPoints } })
   }
-
   function finishCircle() {
     sendCmd({ type: PanelCmd.FINISH_CIRCLE })
     circleMode.value = 'idle'
     circlePreview.value = null
     circlePreviewGeometry.value = null
   }
+  function commitEditCircle() { sendCmd({ type: PanelCmd.COMMIT_EDIT_CIRCLE }) }
+  function cancelEditCircle() { sendCmd({ type: PanelCmd.CANCEL_EDIT_CIRCLE }) }
 
-  function startEditCircle(id: string) {
-    sendCmd({ type: PanelCmd.START_EDIT_CIRCLE, payload: { id } })
-  }
+  // ── 测距编辑命令 ──────────────────────────────────────────────────────────
 
-  function commitEditCircle() {
-    sendCmd({ type: PanelCmd.COMMIT_EDIT_CIRCLE })
-  }
-
-  function cancelEditCircle() {
-    sendCmd({ type: PanelCmd.CANCEL_EDIT_CIRCLE })
-  }
-
-  // ── Measure commands ───────────────────────────────────────────────────────
-
-  function deleteMeasure(id: string) {
-    sendCmd({ type: PanelCmd.DELETE_MEASURE, payload: { id } })
-    // 本地立即移除
-    const idx = measureLayers.value.findIndex(m => m.id === id)
-    if (idx !== -1) measureLayers.value.splice(idx, 1)
-    layerOrder.value = layerOrder.value.filter(oid => oid !== id)
-  }
-
-  function selectMeasure(id: string) {
-    for (const m of measureLayers.value) m.selected = m.id === id
-    sendCmd({ type: PanelCmd.SELECT_MEASURE, payload: { id } })
-  }
-
-  function toggleMeasureVisible(id: string) {
-    const m = measureLayers.value.find(m => m.id === id)
-    if (!m) return
-    m.visible = !m.visible
-    sendCmd({ type: PanelCmd.TOGGLE_MEASURE_VISIBLE, payload: { id, visible: m.visible } })
-  }
-
-  function renameMeasure(id: string, name: string) {
-    const m = measureLayers.value.find(m => m.id === id)
-    if (m) m.name = name
-    sendCmd({ type: PanelCmd.RENAME_MEASURE, payload: { id, name } })
-  }
-
-  /** 拖拽排序后更新图层顺序。 */
-  function reorderLayers(newOrder: string[]) {
-    layerOrder.value = newOrder
-  }
-
-  /** 开始编辑测距：发送完整数据给 hook 以便切换到多点工具编辑模式。 */
-  function startEditMeasure(id: string) {
-    const m = measureLayers.value.find(m => m.id === id)
-    if (!m || m.paths.length === 0) return
-    // 本地切换到测距工具状态（显示"完成"/"撤销"按钮）
-    activeTool.value = TOOL_IDS.MULTI_POINT
-    sendCmd({
-      type: PanelCmd.START_EDIT_MEASURE,
-      payload: {
-        id,
-        name: m.name,
-        points: m.paths[0],
-        segmentDistances: m.segmentDistances,
-      },
-    })
-  }
-
-  /** 提交测距编辑。 */
-  function commitEditMeasure() {
-    sendCmd({ type: PanelCmd.COMMIT_EDIT_MEASURE })
-  }
-
-  /** 取消测距编辑。 */
-  function cancelEditMeasure() {
-    sendCmd({ type: PanelCmd.CANCEL_EDIT_MEASURE })
-  }
-
-  function setDebug(enabled: boolean) {
-    sendCmd({ type: PanelCmd.SET_DEBUG, payload: { enabled } })
-  }
+  function commitEditMeasure() { sendCmd({ type: PanelCmd.COMMIT_EDIT_MEASURE }) }
+  function cancelEditMeasure() { sendCmd({ type: PanelCmd.CANCEL_EDIT_MEASURE }) }
+  function setDebug(enabled: boolean) { sendCmd({ type: PanelCmd.SET_DEBUG, payload: { enabled } }) }
 
   return {
-    isMapReady,
-    mapStatus,
-    activeTool,
-    segments,
-    totalLabel,
-    pointCount,
-    // polygon
-    polygonMode,
-    drawingPointCount,
-    drawingCoordsText,
-    polygonLayers,
-    editingPolygonId,
-    // point marker
-    pointMarkers,
-    // mouse coords
-    mouseCoords,
-    // circle
-    circleMode,
-    circlePreview,
-    circlePreviewGeometry,
-    // measure + unified layers
-    measureLayers,
-    circleLayers,
-    unifiedLayers,
-    layerOrder,
-    // commands
-    setTool,
-    finish,
-    undo,
-    clear,
-    startDrawingPolygon,
-    finishDrawingPolygon,
-    cancelDrawingPolygon,
-    undoPolygonPoint,
-    drawPolygon,
-    deletePolygon,
-    selectPolygonFromPanel,
-    togglePolygonVisible,
-    renamePolygon,
-    startEditPolygon,
-    finishEditPolygon,
-    cancelEditPolygon,
-    deletePointMarker,
-    selectPointMarkerFromPanel,
-    togglePointMarkerVisible,
-    renamePointMarker,
-    importPointMarkers,
-    updateCircle,
-    finishCircle,
-    startDrawingCircle,
-    cancelDrawingCircle,
-    startEditCircle,
-    commitEditCircle,
-    cancelEditCircle,
-    deleteMeasure,
-    selectMeasure,
-    toggleMeasureVisible,
-    renameMeasure,
-    reorderLayers,
-    startEditMeasure,
-    commitEditMeasure,
-    cancelEditMeasure,
-    setDebug,
+    // 基础状态
+    isMapReady, mapStatus, activeTool,
+    // 统一图层
+    layers: sortedLayers, selectedLayer, layerOrder,
+    // 图层操作
+    selectLayer, deleteLayer, toggleLayerVisible, renameLayer, reorderLayers, editLayer,
+    // 测距实时状态
+    segments, totalLabel, pointCount,
+    // 多边形
+    polygonMode, drawingPointCount, drawingCoordsText, editingPolygonId,
+    startDrawingPolygon, finishDrawingPolygon, cancelDrawingPolygon,
+    undoPolygonPoint, drawPolygon, finishEditPolygon, cancelEditPolygon,
+    // 打点
+    pointMarkers, importPointMarkers,
+    // 圆形
+    circleMode, circlePreview, circlePreviewGeometry, measureMode,
+    startDrawingCircle, cancelDrawingCircle, updateCircle, finishCircle,
+    commitEditCircle, cancelEditCircle,
+    // 测距编辑
+    commitEditMeasure, cancelEditMeasure,
+    // 通用
+    mouseCoords, setTool, finish, undo, clear, setDebug,
   }
 }
