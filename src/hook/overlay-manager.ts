@@ -1,5 +1,6 @@
 import type { LatLng } from '@shared/utils/parse-coords'
 import type { OverlaySnapshotItem } from '@shared/protocol'
+import { log } from './logger'
 
 /**
  * 管理地图上所有覆盖物图层（标记、折线、标签、多边形、橡皮筋线）。
@@ -190,10 +191,15 @@ export class OverlayManager {
 
   private _attachMousedownHandler(): void {
     // 只绑定一次（mousedown handler 内部通过 prefix 路由到不同工具的 callback）
-    if (this._mousedownAttached || !this.polygonLayer) return
+    if (this._mousedownAttached || !this.polygonLayer) {
+      log('[overlay] _attachMousedownHandler SKIP — attached:', this._mousedownAttached, 'layer:', !!this.polygonLayer)
+      return
+    }
     this._mousedownAttached = true
+    log('[overlay] _attachMousedownHandler DONE — mousedown listener registered')
     this.polygonLayer.on('mousedown', (evt: any) => {
       const id: string = evt.geometry?.id
+      log('[overlay] mousedown event:', id, 'circleCb:', !!this.onCircleMousedown, 'polyCb:', !!this.onPolygonMousedown)
       if (!id) return
       evt.originalEvent?.stopPropagation()
       if (id.startsWith('circle-') && this.onCircleMousedown) {
