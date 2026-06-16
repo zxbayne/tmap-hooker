@@ -548,7 +548,7 @@ export class CircleTool implements ITool {
     if (this._commitDragId && this.ctx) {
       const map = this.ctx.map
       if (this._commitMmHandler) map.off('mousemove', this._commitMmHandler)
-      if (this._commitMuHandler) map.off('mouseup', this._commitMuHandler)
+      if (this._commitMuHandler) document.removeEventListener('mouseup', this._commitMuHandler)
     }
     this._commitDragId = null
     this._commitDragStartLatLng = null

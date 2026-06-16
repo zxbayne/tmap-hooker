@@ -216,9 +216,8 @@ export class OverlayManager {
     initialGeometries?: any[],
   ) {
     if (this.polygonLayer) {
-      // 图层已存在：更新回调（后续 addPolygon / setPreviewPolygon 可能带入新的回调）;
-      // 初始几何体仅追加。
-      if (onClickCb) this.onPolygonClick = onClickCb
+      // 图层已存在：不覆盖 onClickCb（CircleTool 用空回调，会破坏 PolygonTool 的真实回调）;
+      // mousedown 回调可安全更新；初始几何体仅追加。
       if (onMousedownCb) this.onPolygonMousedown = onMousedownCb
       this._attachMousedownHandler()
       if (initialGeometries && initialGeometries.length > 0) {
