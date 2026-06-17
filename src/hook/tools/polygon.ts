@@ -733,7 +733,7 @@ export class PolygonTool implements ITool {
 
   /** 计算多边形面积和周长，并通过协议发送给 panel。 */
   private _sendGeometryInfo(id: string, coords: LatLng[]): void {
-    if (!this.ctx || coords.length < 3) return
+    if (coords.length < 3) return
     const TMap = (window as any).TMap
     if (!TMap?.geometry) return
     try {

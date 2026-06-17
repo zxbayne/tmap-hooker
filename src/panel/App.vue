@@ -18,13 +18,15 @@
     class="floating-panel"
     :style="{ right: '10px', top: posY + 'px' }"
   >
+    <!-- 地图状态角标 -->
+    <span class="map-status-corner" :class="statusClass" :title="statusText">
+      {{ statusText }}
+    </span>
+
     <!-- 标题栏 / 拖拽区域 -->
     <div class="panel-header" @mousedown.prevent="startDrag">
       <span class="panel-title">📍 TMap 工具</span>
       <div class="header-actions">
-        <span class="map-status" :class="statusClass">
-          {{ statusText }}
-        </span>
         <button class="icon-btn" :class="{ active: showSettings }" @click.stop="toggleSettings" title="设置">
           ⚙️
         </button>
